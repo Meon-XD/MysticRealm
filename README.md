@@ -1,7 +1,6 @@
 # Mystic Realm
 
-Android Action RPG + teka-teki, ditulis murni dengan Java dan Canvas tanpa engine,
-Gradle, atau library eksternal.
+Android Action RPG + teka-teki, Dibuat Pake Bahasa Java, jadi ya begitulah.
 
 ## Build
 
