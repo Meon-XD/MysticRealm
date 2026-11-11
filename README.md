@@ -59,11 +59,19 @@ Atau buka file APK dari pengelola berkas Android.
 Fitur: 3 kelas, 7 tipe monster, bos unik per dunia, 8 tipe teka-teki,
 inventaris, toko, upgrade equipment, skill, talenta, 5 tingkat kesulitan,
 pengaturan volume musik/SFX, ukuran tombol, sensitivitas analog, kualitas grafis,
-musik/SFX sintetis, minimap, dan penyimpanan lokal.
+musik/SFX sintetis, minimap, penyimpanan lokal, serta sinematik pembuka dan penutup.
+
+## Sinematik
+
+- Video pembuka diputar saat memulai petualangan baru; tersedia tombol `Lewati`.
+- Video penutup diputar setelah bos terakhir dikalahkan.
+- Video 720p tersimpan di `res/raw/cinematic_opening.mp4` dan
+  `res/raw/cinematic_ending.mp4`.
 
 ## Struktur
 
 - `src/com/mysticrealm/MainActivity.java` - activity dan lifecycle.
+- `CinematicDialog.java` - pemutar video pembuka/penutup layar penuh.
 - `GameView.java` - loop frame dan input sentuh.
 - `Game.java` - mode layar, simpan/muat, transisi.
 - `Screens.java` - menu, peta, inventory, toko, skill, pengaturan, hasil.

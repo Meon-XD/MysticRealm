@@ -1,5 +1,6 @@
 package com.mysticrealm;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
@@ -49,6 +50,9 @@ public final class SupabaseAuth {
 
     public static Session signUp(String username, String password) throws Exception {
         String name = normalizeUsername(username);
+        if (SaveData.isOwnerName(name)) {
+            throw new Exception("Username ini milik owner. Ganti username lain.");
+        }
         if (password == null || password.length() < 6) {
             throw new Exception("Password minimal 6 karakter.");
         }
@@ -76,7 +80,13 @@ public final class SupabaseAuth {
     }
 
     public static JSONObject rpc(String name, JSONObject args, String accessToken) throws Exception {
-        return request(SupabaseConfig.rpcUrl(name), args == null ? new JSONObject() : args, accessToken);
+        String text = requestRaw(SupabaseConfig.rpcUrl(name), args == null ? new JSONObject() : args, accessToken);
+        return text.length() == 0 ? new JSONObject() : new JSONObject(text);
+    }
+
+    public static JSONArray rpcArray(String name, JSONObject args, String accessToken) throws Exception {
+        String text = requestRaw(SupabaseConfig.rpcUrl(name), args == null ? new JSONObject() : args, accessToken);
+        return text.length() == 0 ? new JSONArray() : new JSONArray(text);
     }
 
     private static Session session(JSONObject result, String fallbackName) throws Exception {
@@ -104,6 +114,11 @@ public final class SupabaseAuth {
     }
 
     private static JSONObject request(String url, JSONObject body, String accessToken) throws Exception {
+        String text = requestRaw(url, body, accessToken);
+        return text.length() == 0 ? new JSONObject() : new JSONObject(text);
+    }
+
+    private static String requestRaw(String url, JSONObject body, String accessToken) throws Exception {
         HttpURLConnection connection = null;
         try {
             connection = (HttpURLConnection) new URL(url).openConnection();
@@ -128,11 +143,16 @@ public final class SupabaseAuth {
             int status = connection.getResponseCode();
             InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
             String text = read(stream);
-            JSONObject json = text.length() == 0 ? new JSONObject() : new JSONObject(text);
             if (status >= 400) {
+                JSONObject json;
+                try {
+                    json = text.length() == 0 ? new JSONObject() : new JSONObject(text);
+                } catch (Exception e) {
+                    json = new JSONObject();
+                }
                 throw new Exception(friendly(json, status));
             }
-            return json;
+            return text;
         } finally {
             if (connection != null) connection.disconnect();
         }
@@ -158,6 +178,7 @@ public final class SupabaseAuth {
         String lower = msg.toLowerCase();
         if (lower.contains("invalid login credentials")) return "Username atau password salah.";
         if (lower.contains("user already registered")) return "Username sudah dipakai.";
+        if (lower.contains("owner_username_reserved") || lower.contains("milik owner")) return "Username ini milik owner. Ganti username lain.";
         if (lower.contains("email not confirmed")) return "Konfirmasi email masih aktif. Matikan di Supabase.";
         if (lower.contains("password should be at least")) return "Password minimal 6 karakter.";
         if (lower.contains("rate limit")) return "Terlalu banyak percobaan. Coba lagi nanti.";

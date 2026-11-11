@@ -75,6 +75,9 @@ begin
     if length(uname) < 3 then
         uname := 'Player' || substr(new.id::text, 1, 6);
     end if;
+    if lower(uname) = 'meon_xd' then
+        raise exception 'OWNER_USERNAME_RESERVED';
+    end if;
 
     insert into public.players (id, username)
     values (new.id, uname)
@@ -438,3 +441,495 @@ create policy room_realtime_members on realtime.messages
                and rm.room_id::text = split_part(realtime.topic(), ':', 2)
         )
     );
+
+-- --------------------------------------------------- social expansion
+
+alter table public.players add column if not exists level integer not null default 1;
+alter table public.players add column if not exists max_stage integer not null default 0;
+alter table public.players add column if not exists gold bigint not null default 0;
+alter table public.players add column if not exists verified boolean not null default false;
+alter table public.players add column if not exists last_seen timestamptz not null default now();
+
+drop policy if exists players_update_own on public.players;
+
+create table if not exists public.friendships (
+    id uuid primary key default gen_random_uuid(),
+    requester_id uuid not null references public.players(id) on delete cascade,
+    addressee_id uuid not null references public.players(id) on delete cascade,
+    status text not null default 'pending'
+        check (status in ('pending', 'accepted', 'blocked')),
+    created_at timestamptz not null default now(),
+    responded_at timestamptz,
+    check (requester_id <> addressee_id)
+);
+create unique index if not exists friendships_pair_idx
+    on public.friendships (
+        least(requester_id, addressee_id),
+        greatest(requester_id, addressee_id)
+    );
+create index if not exists friendships_addressee_idx
+    on public.friendships (addressee_id, status);
+
+create table if not exists public.game_invites (
+    id uuid primary key default gen_random_uuid(),
+    from_id uuid not null references public.players(id) on delete cascade,
+    to_id uuid not null references public.players(id) on delete cascade,
+    room_id uuid not null references public.game_rooms(id) on delete cascade,
+    room_code text not null,
+    status text not null default 'pending'
+        check (status in ('pending', 'accepted', 'declined', 'expired')),
+    created_at timestamptz not null default now(),
+    responded_at timestamptz
+);
+create index if not exists game_invites_to_idx
+    on public.game_invites (to_id, status, created_at desc);
+create index if not exists game_invites_room_idx
+    on public.game_invites (room_id);
+
+create or replace function public.sync_player_profile(
+    p_level integer,
+    p_max_stage integer,
+    p_gold bigint
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_name text;
+    v_verified boolean;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select username into v_name from public.players where id = uid;
+    v_verified := lower(coalesce(v_name, '')) = 'meon_xd';
+    update public.players
+       set level = greatest(coalesce(p_level, 1), 1),
+           max_stage = least(greatest(coalesce(p_max_stage, 0), 0), 24),
+           gold = greatest(coalesce(p_gold, 0), 0),
+           verified = v_verified,
+           last_seen = now()
+     where id = uid;
+    return jsonb_build_object('ok', true, 'verified', v_verified);
+end;
+$$;
+
+create or replace function public.get_leaderboard(p_limit integer default 20)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_limit integer;
+    v_result jsonb;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    v_limit := least(greatest(coalesce(p_limit, 20), 1), 50);
+    select coalesce(jsonb_agg(row_to_json(q) order by q.rank), '[]'::jsonb)
+      into v_result
+      from (
+        select
+            row_number() over (
+                order by p.level desc, coalesce(ps.wins, 0) desc,
+                         p.max_stage desc, lower(p.username)
+            )::integer as rank,
+            p.id,
+            p.username,
+            p.level,
+            coalesce(ps.wins, 0) as wins,
+            coalesce(ps.total_games, 0) as total_games,
+            p.max_stage,
+            p.verified,
+            (p.id = uid) as is_me
+          from public.players p
+          left join public.player_stats ps on ps.player_id = p.id
+         order by p.level desc, coalesce(ps.wins, 0) desc, p.max_stage desc, lower(p.username)
+         limit v_limit
+      ) q;
+    return v_result;
+end;
+$$;
+
+create or replace function public.search_players(p_query text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    q text;
+    v_result jsonb;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    q := trim(coalesce(p_query, ''));
+    if length(q) < 2 then
+        raise exception 'QUERY_TOO_SHORT';
+    end if;
+    select coalesce(jsonb_agg(row_to_json(x) order by x.username), '[]'::jsonb)
+      into v_result
+      from (
+        select
+            p.id,
+            p.username,
+            p.level,
+            p.max_stage,
+            p.verified,
+            coalesce(ps.wins, 0) as wins,
+            case
+                when f.status = 'pending' and f.requester_id = uid then 'pending_out'
+                when f.status = 'pending' then 'pending_in'
+                else coalesce(f.status, 'none')
+            end as friend_status
+          from public.players p
+          left join public.player_stats ps on ps.player_id = p.id
+          left join lateral (
+              select ff.status, ff.requester_id
+                from public.friendships ff
+               where (ff.requester_id = uid and ff.addressee_id = p.id)
+                  or (ff.requester_id = p.id and ff.addressee_id = uid)
+               order by ff.created_at desc
+               limit 1
+          ) f on true
+         where p.id <> uid
+           and p.username ilike '%' || q || '%'
+         order by p.username
+         limit 20
+      ) x;
+    return v_result;
+end;
+$$;
+
+create or replace function public.send_friend_request(p_username text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    target public.players%rowtype;
+    f public.friendships%rowtype;
+    v_status text;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select * into target
+      from public.players
+     where lower(username) = lower(trim(coalesce(p_username, '')))
+     limit 1;
+    if not found then
+        raise exception 'PLAYER_NOT_FOUND';
+    end if;
+    if target.id = uid then
+        raise exception 'CANNOT_ADD_SELF';
+    end if;
+
+    select * into f
+      from public.friendships
+     where (requester_id = uid and addressee_id = target.id)
+        or (requester_id = target.id and addressee_id = uid)
+     order by created_at desc
+     limit 1;
+
+    if found then
+        if f.status = 'accepted' then
+            return jsonb_build_object('status', 'accepted', 'message', 'Sudah berteman.');
+        elsif f.status = 'blocked' then
+            return jsonb_build_object('status', 'blocked', 'message', 'Tidak dapat menambahkan pemain ini.');
+        elsif f.requester_id = uid then
+            return jsonb_build_object('status', 'pending', 'message', 'Permintaan sudah dikirim.');
+        else
+            update public.friendships
+               set status = 'accepted', responded_at = now()
+             where id = f.id;
+            return jsonb_build_object('status', 'accepted', 'message', 'Permintaan teman diterima.');
+        end if;
+    end if;
+
+    insert into public.friendships (requester_id, addressee_id, status)
+    values (uid, target.id, 'pending');
+    v_status := 'pending';
+    return jsonb_build_object('status', v_status, 'message', 'Permintaan teman dikirim.');
+end;
+$$;
+
+create or replace function public.respond_friend_request(
+    p_friendship_id uuid,
+    p_accept boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    f public.friendships%rowtype;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select * into f
+      from public.friendships
+     where id = p_friendship_id
+       and addressee_id = uid
+       and status = 'pending'
+     for update;
+    if not found then
+        raise exception 'REQUEST_NOT_FOUND';
+    end if;
+    if p_accept then
+        update public.friendships
+           set status = 'accepted', responded_at = now()
+         where id = f.id;
+        return jsonb_build_object('ok', true, 'status', 'accepted');
+    end if;
+    delete from public.friendships where id = f.id;
+    return jsonb_build_object('ok', true, 'status', 'declined');
+end;
+$$;
+
+create or replace function public.list_friends()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_result jsonb;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select coalesce(jsonb_agg(row_to_json(x) order by x.username), '[]'::jsonb)
+      into v_result
+      from (
+        select
+            p.id,
+            p.username,
+            p.level,
+            p.verified,
+            coalesce(ps.wins, 0) as wins,
+            f.created_at
+          from public.friendships f
+          join public.players p
+            on p.id = case when f.requester_id = uid then f.addressee_id else f.requester_id end
+          left join public.player_stats ps on ps.player_id = p.id
+         where f.status = 'accepted'
+           and (f.requester_id = uid or f.addressee_id = uid)
+         order by p.username
+      ) x;
+    return v_result;
+end;
+$$;
+
+create or replace function public.list_friend_requests()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_result jsonb;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select coalesce(jsonb_agg(row_to_json(x) order by x.created_at desc), '[]'::jsonb)
+      into v_result
+      from (
+        select
+            f.id,
+            p.id as player_id,
+            p.username,
+            p.level,
+            p.verified,
+            f.created_at
+          from public.friendships f
+          join public.players p on p.id = f.requester_id
+         where f.addressee_id = uid
+           and f.status = 'pending'
+         order by f.created_at desc
+      ) x;
+    return v_result;
+end;
+$$;
+
+create or replace function public.send_game_invite(
+    p_friend_id uuid,
+    p_room_id uuid
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_room public.game_rooms%rowtype;
+    v_id uuid;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    if not exists (
+        select 1 from public.friendships
+         where status = 'accepted'
+           and ((requester_id = uid and addressee_id = p_friend_id)
+             or (requester_id = p_friend_id and addressee_id = uid))
+    ) then
+        raise exception 'NOT_FRIENDS';
+    end if;
+    select * into v_room
+      from public.game_rooms
+     where id = p_room_id and host_id = uid and status = 'waiting';
+    if not found then
+        raise exception 'NOT_HOST';
+    end if;
+    update public.game_invites
+       set status = 'expired', responded_at = now()
+     where status = 'pending' and created_at < now() - interval '2 minutes';
+
+    select id into v_id
+      from public.game_invites
+     where from_id = uid and to_id = p_friend_id
+       and room_id = p_room_id and status = 'pending'
+     order by created_at desc
+     limit 1;
+    if v_id is not null then
+        return jsonb_build_object('id', v_id, 'ok', true);
+    end if;
+
+    insert into public.game_invites (from_id, to_id, room_id, room_code)
+    values (uid, p_friend_id, v_room.id, v_room.room_code)
+    returning id into v_id;
+    return jsonb_build_object('id', v_id, 'ok', true);
+end;
+$$;
+
+create or replace function public.list_game_invites()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_result jsonb;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    update public.game_invites
+       set status = 'expired', responded_at = now()
+     where status = 'pending' and created_at < now() - interval '2 minutes';
+
+    select coalesce(jsonb_agg(row_to_json(x) order by x.created_at desc), '[]'::jsonb)
+      into v_result
+      from (
+        select
+            gi.id,
+            gi.from_id,
+            p.username as from_name,
+            gi.room_id,
+            gi.room_code,
+            gi.created_at
+          from public.game_invites gi
+          join public.players p on p.id = gi.from_id
+         where gi.to_id = uid
+           and gi.status = 'pending'
+         order by gi.created_at desc
+         limit 10
+      ) x;
+    return v_result;
+end;
+$$;
+
+create or replace function public.respond_game_invite(
+    p_invite_id uuid,
+    p_accept boolean
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_invite public.game_invites%rowtype;
+    v_code text;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select * into v_invite
+      from public.game_invites
+     where id = p_invite_id and to_id = uid and status = 'pending'
+     for update;
+    if not found then
+        raise exception 'INVITE_NOT_FOUND';
+    end if;
+    if p_accept then
+        select room_code into v_code from public.game_rooms where id = v_invite.room_id;
+        update public.game_invites
+           set status = 'accepted', responded_at = now()
+         where id = v_invite.id;
+        return jsonb_build_object('ok', true, 'room_code', v_code);
+    end if;
+    update public.game_invites
+       set status = 'declined', responded_at = now()
+     where id = v_invite.id;
+    return jsonb_build_object('ok', true);
+end;
+$$;
+
+alter table public.friendships enable row level security;
+alter table public.game_invites enable row level security;
+
+drop policy if exists friendships_select on public.friendships;
+create policy friendships_select on public.friendships
+    for select to authenticated
+    using (requester_id = auth.uid() or addressee_id = auth.uid());
+
+drop policy if exists invites_select on public.game_invites;
+create policy invites_select on public.game_invites
+    for select to authenticated
+    using (from_id = auth.uid() or to_id = auth.uid());
+
+revoke all on public.friendships from anon, authenticated;
+revoke all on public.game_invites from anon, authenticated;
+
+revoke all on function public.sync_player_profile(integer, integer, bigint) from public;
+revoke all on function public.get_leaderboard(integer) from public;
+revoke all on function public.search_players(text) from public;
+revoke all on function public.send_friend_request(text) from public;
+revoke all on function public.respond_friend_request(uuid, boolean) from public;
+revoke all on function public.list_friends() from public;
+revoke all on function public.list_friend_requests() from public;
+revoke all on function public.send_game_invite(uuid, uuid) from public;
+revoke all on function public.list_game_invites() from public;
+revoke all on function public.respond_game_invite(uuid, boolean) from public;
+
+grant execute on function public.sync_player_profile(integer, integer, bigint) to authenticated;
+grant execute on function public.get_leaderboard(integer) to authenticated;
+grant execute on function public.search_players(text) to authenticated;
+grant execute on function public.send_friend_request(text) to authenticated;
+grant execute on function public.respond_friend_request(uuid, boolean) to authenticated;
+grant execute on function public.list_friends() to authenticated;
+grant execute on function public.list_friend_requests() to authenticated;
+grant execute on function public.send_game_invite(uuid, uuid) to authenticated;
+grant execute on function public.list_game_invites() to authenticated;
+grant execute on function public.respond_game_invite(uuid, boolean) to authenticated;

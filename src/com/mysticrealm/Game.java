@@ -21,12 +21,19 @@ public class Game {
     public static final int LAN_LOBBY = 10;
     public static final int LOADING = 11;
     public static final int ONLINE_LOBBY = 12;
+    public static final int PROFILE = 13;
+    public static final int ACHIEVEMENTS = 14;
+    public static final int HELP = 15;
+    public static final int FRIENDS = 16;
+    public static final int LEADERBOARD = 17;
 
     public static final int INPUT_NAME = 1;
     public static final int INPUT_IP = 2;
     public static final int INPUT_USERNAME = 3;
     public static final int INPUT_PASSWORD = 4;
     public static final int INPUT_ROOM_CODE = 5;
+    public static final int INPUT_SEARCH = 6;
+    public static final int INPUT_OWNER_PASSWORD = 7;
 
     public final Context context;
     public final Gfx gfx = new Gfx();
@@ -51,6 +58,8 @@ public class Game {
     public int shopPage = 0;
     public String selItemId = null;
     public boolean confirmNew = false;
+    public String searchQuery = "";
+    public int helpPage = 0;
 
     public float W = 1920f;
     public float H = 1080f;
@@ -73,14 +82,17 @@ public class Game {
     public boolean inputPassword = false;
     public boolean inputShift = false;
     public boolean inputError = false;
+    public boolean cinematicActive = false;
 
     private int lastMusic = -99;
     private String lanErrorShown = null;
+    private String pendingOwnerName = null;
 
     public Game(Context context) {
         this.context = context;
         gfx.setSize(W, H);
         save = new SaveData(context);
+        if (save.isOwner()) save.applyOwnerBoosts();
         audio = new Audio(context);
         audio.setMusicVolume(save.musicVolume);
         audio.setSfxVolume(save.sfxVolume);
@@ -98,7 +110,7 @@ public class Game {
     // ------------------------------------------------------------ lifecycle
 
     public void onResume() {
-        audio.resumeMusic();
+        if (!cinematicActive) audio.resumeMusic();
     }
 
     public void onPause() {
@@ -166,6 +178,13 @@ public class Game {
                 lan = null;
                 mode = MENU;
                 return true;
+            case PROFILE:
+            case ACHIEVEMENTS:
+            case HELP:
+            case FRIENDS:
+            case LEADERBOARD:
+                mode = MENU;
+                return true;
             default:
                 mode = MENU;
                 return true;
@@ -184,6 +203,8 @@ public class Game {
             }
         }
 
+        if (cinematicActive) return;
+
         if (mode == LOADING) {
             loadingT += dt;
             if (loadingT >= loadingDuration) finishLoading();
@@ -198,6 +219,12 @@ public class Game {
             }
             if ((mode == ONLINE_LOBBY || mode == PLAY) && !online.host && online.hasRoom()) {
                 onlineStage = online.lobbyStage;
+            }
+            String joinCode = online.takeInviteJoinCode();
+            if (joinCode.length() > 0) {
+                openOnlineLobby();
+                online.joinRoom(joinCode);
+                notify("Bergabung ke room " + joinCode);
             }
         }
 
@@ -227,6 +254,10 @@ public class Game {
                     leaveLan();
                     gp.lan = null;
                 }
+                if (gp.won && gp.stageIndex == 24) {
+                    playCinematic("ending");
+                    return;
+                }
                 mode = RESULT;
                 return;
             }
@@ -234,7 +265,8 @@ public class Game {
 
         int theme = -1;
         if (mode == MENU || mode == CLASS_SELECT || mode == LAN_LOBBY
-                || mode == ONLINE_LOBBY) {
+                || mode == ONLINE_LOBBY || mode == PROFILE || mode == ACHIEVEMENTS
+                || mode == HELP || mode == FRIENDS || mode == LEADERBOARD) {
             theme = 0;
         } else if (mode == WORLD_MAP || mode == INVENTORY || mode == SHOP
                 || mode == SKILLS || mode == SETTINGS) {
@@ -254,6 +286,10 @@ public class Game {
         mode = MENU;
         lastMusic = -99;
         audio.play("level");
+        if (!save.ownerMode && SaveData.isOwnerName(save.playerName)) {
+            pendingOwnerName = save.playerName;
+            promptOwnerPassword();
+        }
     }
 
     // ----------------------------------------------------------------- draw
@@ -363,6 +399,43 @@ public class Game {
             return;
         }
         if (confirmNew && id != Screens.CONFIRM_YES && id != Screens.CONFIRM_NO) return;
+        if (id >= Screens.OWNER_SKILL_DOWN_BASE && id < Screens.OWNER_SKILL_DOWN_BASE + 3) {
+            ownerSkill(id - Screens.OWNER_SKILL_DOWN_BASE, -1);
+            return;
+        }
+        if (id >= Screens.OWNER_SKILL_UP_BASE && id < Screens.OWNER_SKILL_UP_BASE + 3) {
+            ownerSkill(id - Screens.OWNER_SKILL_UP_BASE, 1);
+            return;
+        }
+        if (id >= Screens.FRIEND_ROW_BASE && id < Screens.FRIEND_ROW_BASE + 20) {
+            int idx = id - Screens.FRIEND_ROW_BASE;
+            if (online != null && idx < online.friends.size()) {
+                online.selectedFriendId = online.friends.get(idx).id;
+                audio.play("click");
+            }
+            return;
+        }
+        if (id >= Screens.FRIEND_ACCEPT_BASE && id < Screens.FRIEND_ACCEPT_BASE + 20) {
+            int idx = id - Screens.FRIEND_ACCEPT_BASE;
+            if (online != null && idx < online.requests.size()) {
+                online.respondFriendRequest(online.requests.get(idx).id, true);
+            }
+            return;
+        }
+        if (id >= Screens.FRIEND_DECLINE_BASE && id < Screens.FRIEND_DECLINE_BASE + 20) {
+            int idx = id - Screens.FRIEND_DECLINE_BASE;
+            if (online != null && idx < online.requests.size()) {
+                online.respondFriendRequest(online.requests.get(idx).id, false);
+            }
+            return;
+        }
+        if (id >= Screens.ADD_FRIEND_BASE && id < Screens.ADD_FRIEND_BASE + 20) {
+            int idx = id - Screens.ADD_FRIEND_BASE;
+            if (online != null && idx < online.searchResults.size()) {
+                online.sendFriendRequest(online.searchResults.get(idx).username);
+            }
+            return;
+        }
         if (id >= Screens.ITEM_ROW_BASE) {
             List<String> list = itemList();
             int idx = id - Screens.ITEM_ROW_BASE;
@@ -429,8 +502,8 @@ public class Game {
                 save.reset(selClass);
                 save.save();
                 mapWorld = 0;
-                mode = WORLD_MAP;
                 audio.play("level");
+                playCinematic("opening");
                 break;
             case Screens.QUIT:
                 save.save();
@@ -510,6 +583,86 @@ public class Game {
                 break;
             case Screens.MENU_NAME:
                 promptPlayerName();
+                break;
+            case Screens.MENU_PROFILE:
+                mode = PROFILE;
+                audio.play("click");
+                break;
+            case Screens.MENU_ACHIEVEMENTS:
+                mode = ACHIEVEMENTS;
+                audio.play("click");
+                break;
+            case Screens.MENU_FRIENDS:
+                mode = FRIENDS;
+                if (online != null && online.loggedIn) online.fetchFriends();
+                audio.play("click");
+                break;
+            case Screens.MENU_LEADERBOARD:
+                mode = LEADERBOARD;
+                if (online != null && online.loggedIn) online.fetchLeaderboard();
+                audio.play("click");
+                break;
+            case Screens.MENU_HELP:
+                helpPage = 0;
+                mode = HELP;
+                audio.play("click");
+                break;
+            case Screens.INVITE_ACCEPT:
+                if (online != null && online.pendingInvite != null) {
+                    online.respondInvite(online.pendingInvite.id, true);
+                }
+                audio.play("click");
+                break;
+            case Screens.INVITE_DECLINE:
+                if (online != null && online.pendingInvite != null) {
+                    online.respondInvite(online.pendingInvite.id, false);
+                }
+                audio.play("click");
+                break;
+            case Screens.SOCIAL_SEARCH:
+                promptSearch();
+                break;
+            case Screens.SOCIAL_REFRESH:
+                if (online != null) {
+                    if (mode == FRIENDS) online.fetchFriends();
+                    else if (mode == LEADERBOARD) online.fetchLeaderboard();
+                    else online.fetchInvites();
+                }
+                audio.play("click");
+                break;
+            case Screens.FRIEND_INVITE:
+                if (online != null && online.selectedFriendId.length() > 0) {
+                    online.sendInvite(online.selectedFriendId);
+                } else {
+                    notify("Pilih teman dulu.");
+                    audio.play("deny");
+                }
+                break;
+            case Screens.PROFILE_ACHIEVEMENTS:
+                mode = ACHIEVEMENTS;
+                audio.play("click");
+                break;
+            case Screens.PROFILE_FRIENDS:
+                mode = FRIENDS;
+                if (online != null && online.loggedIn) online.fetchFriends();
+                audio.play("click");
+                break;
+            case Screens.PROFILE_LEADERBOARD:
+                mode = LEADERBOARD;
+                if (online != null && online.loggedIn) online.fetchLeaderboard();
+                audio.play("click");
+                break;
+            case Screens.LEADERBOARD_REFRESH:
+                if (online != null) online.fetchLeaderboard();
+                audio.play("click");
+                break;
+            case Screens.HELP_PREV:
+                helpPage = Math.max(0, helpPage - 1);
+                audio.play("click");
+                break;
+            case Screens.HELP_NEXT:
+                helpPage = Math.min((save.isOwner() ? 6 : 5) - 1, helpPage + 1);
+                audio.play("click");
                 break;
             case Screens.LAN_HOST:
                 hostLan();
@@ -756,6 +909,32 @@ public class Game {
         audio.play("click");
     }
 
+    private void playCinematic(final String kind) {
+        if (cinematicActive) return;
+        cinematicActive = true;
+        audio.pauseMusic();
+        if (context instanceof MainActivity) {
+            ((MainActivity) context).playCinematic(kind, new Runnable() {
+                public void run() {
+                    finishCinematic(kind);
+                }
+            });
+        } else {
+            finishCinematic(kind);
+        }
+    }
+
+    private void finishCinematic(String kind) {
+        cinematicActive = false;
+        audio.resumeMusic();
+        if ("opening".equals(kind)) {
+            mode = WORLD_MAP;
+            lastMusic = -99;
+        } else if ("ending".equals(kind)) {
+            mode = RESULT;
+        }
+    }
+
     private void openLanLobby() {
         mode = LAN_LOBBY;
         lanStage = Gfx.clamp(save.maxStage, 0, 24);
@@ -837,6 +1016,17 @@ public class Game {
                 onlineCode, "ABC123", 6, false, false);
     }
 
+    private void promptSearch() {
+        openTextInput(INPUT_SEARCH, "CARI PEMAIN", "Cari username teman untuk dikirimi permintaan.",
+                searchQuery, "username", 16, false, false);
+    }
+
+    private void promptOwnerPassword() {
+        openTextInput(INPUT_OWNER_PASSWORD, "PASSWORD OWNER",
+                "Nama ini khusus owner. Masukkan password untuk membuka akses.",
+                "", "password owner", 32, false, true);
+    }
+
     private void openTextInput(int purpose, String title, String message, String initial,
                                String hint, int max, boolean numeric) {
         openTextInput(purpose, title, message, initial, hint, max, numeric, false);
@@ -862,6 +1052,7 @@ public class Game {
         inputActive = false;
         inputValue = "";
         inputPassword = false;
+        pendingOwnerName = null;
     }
 
     private void inputAction(int id) {
@@ -909,7 +1100,9 @@ public class Game {
                 audio.play("deny");
                 return;
             }
-        } else if (!inputPassword && ch != ' ' && ch != '-') {
+        } else if (inputPassword) {
+            ch = inputShift ? Character.toUpperCase(ch) : Character.toLowerCase(ch);
+        } else if (ch != ' ' && ch != '-') {
             if (inputValue.length() == 0) {
                 ch = Character.toUpperCase(ch);
             } else {
@@ -973,10 +1166,31 @@ public class Game {
             return;
         }
         if (inputPurpose == INPUT_NAME) {
+            if (!save.ownerMode && SaveData.isOwnerName(value)) {
+                pendingOwnerName = value;
+                promptOwnerPassword();
+                return;
+            }
             save.setPlayerName(value);
             closeTextInput();
             notify("Nama disimpan: " + save.playerName);
             audio.play("level");
+        } else if (inputPurpose == INPUT_OWNER_PASSWORD) {
+            if (SaveData.verifyOwnerPassword(value)) {
+                String ownerName = pendingOwnerName;
+                save.ownerMode = true;
+                if (ownerName != null) save.setPlayerName(ownerName);
+                save.applyOwnerBoosts();
+                save.save();
+                closeTextInput();
+                notify("Owner mode aktif.");
+                audio.play("level");
+            } else {
+                inputValue = "";
+                inputError = true;
+                inputMessage = "Password owner salah. Coba lagi.";
+                audio.play("deny");
+            }
         } else if (inputPurpose == INPUT_IP) {
             closeTextInput();
             joinLan(value);
@@ -991,6 +1205,10 @@ public class Game {
             onlineCode = value.toUpperCase();
             closeTextInput();
             if (online != null) online.joinRoom(onlineCode);
+        } else if (inputPurpose == INPUT_SEARCH) {
+            searchQuery = value;
+            closeTextInput();
+            if (online != null) online.searchPlayers(searchQuery);
         } else {
             closeTextInput();
         }
@@ -1073,6 +1291,13 @@ public class Game {
 
     private void upgradeSkill(int i) {
         if (i < 0 || i >= 3) return;
+        if (save.isOwner()) {
+            save.skillLv[i] = Catalog.MAX_SKILL_LEVEL;
+            save.save();
+            audio.play("level");
+            notify(Catalog.SKILLS[save.classIndex][i].name + " dimaksimalkan.");
+            return;
+        }
         int lvl = save.skillLv[i];
         if (lvl >= Catalog.MAX_SKILL_LEVEL) {
             notify("Skill sudah maksimum.");
@@ -1091,6 +1316,14 @@ public class Game {
         save.save();
         audio.play("level");
         notify(Catalog.SKILLS[save.classIndex][i].name + "  Lv " + (lvl + 1));
+    }
+
+    private void ownerSkill(int i, int delta) {
+        if (!save.isOwner() || i < 0 || i >= 3) return;
+        save.skillLv[i] = Gfx.clamp(save.skillLv[i] + delta, 0, Catalog.MAX_SKILL_LEVEL);
+        save.save();
+        audio.play("click");
+        notify(Catalog.SKILLS[save.classIndex][i].name + "  Lv " + save.skillLv[i]);
     }
 
     private void upgradeTrack(int i) {

@@ -18,11 +18,52 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
     public volatile String hostId = "";
     public volatile int maxPlayers = 4;
     public volatile int lobbyStage;
+    public volatile String socialMessage = "";
+    public volatile boolean socialBusy;
+    public volatile List<PlayerRow> leaderboard = new ArrayList<>();
+    public volatile List<PlayerRow> searchResults = new ArrayList<>();
+    public volatile List<FriendRow> friends = new ArrayList<>();
+    public volatile List<FriendRow> requests = new ArrayList<>();
+    public volatile InviteRow pendingInvite;
+    public volatile String selectedFriendId = "";
 
+    private volatile String inviteJoinCode = "";
+    private volatile long lastInvitePoll;
     private volatile SupabaseAuth.Session session;
     private volatile RealtimeClient ws;
     private volatile boolean closing;
     private final ConcurrentHashMap<String, Remote> members = new ConcurrentHashMap<>();
+
+    public static class PlayerRow {
+        public String id = "";
+        public String username = "";
+        public int level = 1;
+        public int wins;
+        public int totalGames;
+        public int maxStage;
+        public boolean verified;
+        public boolean me;
+        public int rank;
+        public String friendStatus = "none";
+    }
+
+    public static class FriendRow {
+        public String id = "";
+        public String username = "";
+        public int level = 1;
+        public int wins;
+        public boolean verified;
+        public String createdAt = "";
+    }
+
+    public static class InviteRow {
+        public String id = "";
+        public String fromId = "";
+        public String fromName = "";
+        public String roomId = "";
+        public String roomCode = "";
+        public String createdAt = "";
+    }
 
     public OnlineCoop(SaveData save) {
         super(save);
@@ -84,8 +125,308 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
         session = null;
         loggedIn = false;
         username = "";
+        save.ownerMode = false;
+        save.save();
         members.clear();
+        leaderboard = new ArrayList<>();
+        searchResults = new ArrayList<>();
+        friends = new ArrayList<>();
+        requests = new ArrayList<>();
+        pendingInvite = null;
+        socialMessage = "";
         error = null;
+    }
+
+    public void syncProfile() {
+        if (!loggedIn || session == null) return;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    SupabaseAuth.Session active = session;
+                    if (active == null) return;
+                    JSONObject args = new JSONObject();
+                    args.put("p_level", Math.max(1, save.level));
+                    args.put("p_max_stage", Gfx.clamp(save.maxStage, 0, 24));
+                    args.put("p_gold", Math.max(0, save.gold));
+                    JSONObject profile = SupabaseAuth.rpc("sync_player_profile", args, active.accessToken);
+                    if (!loggedIn || session != active) return;
+                    boolean verified = profile.optBoolean("verified", false);
+                    save.ownerMode = verified;
+                    if (verified) save.applyOwnerBoosts();
+                    save.save();
+                } catch (Exception ignored) {
+                }
+            }
+        }, "online-profile").start();
+    }
+
+    public void fetchLeaderboard() {
+        if (!loggedIn) return;
+        socialBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONArray arr = SupabaseAuth.rpcArray("get_leaderboard", new JSONObject(), session.accessToken);
+                    ArrayList<PlayerRow> rows = new ArrayList<>();
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject o = arr.optJSONObject(i);
+                        if (o != null) rows.add(playerRow(o));
+                    }
+                    leaderboard = rows;
+                    socialMessage = rows.isEmpty() ? "Belum ada peringkat." : "";
+                } catch (Exception e) {
+                    socialMessage = shortError(e);
+                } finally {
+                    socialBusy = false;
+                }
+            }
+        }, "online-leaderboard").start();
+    }
+
+    public void searchPlayers(final String query) {
+        if (!loggedIn) return;
+        final String q = query == null ? "" : query.trim();
+        if (q.length() < 2) {
+            socialMessage = "Ketik minimal 2 huruf.";
+            return;
+        }
+        socialBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_query", q);
+                    JSONArray arr = SupabaseAuth.rpcArray("search_players", args, session.accessToken);
+                    ArrayList<PlayerRow> rows = new ArrayList<>();
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject o = arr.optJSONObject(i);
+                        if (o != null) rows.add(playerRow(o));
+                    }
+                    searchResults = rows;
+                    socialMessage = rows.isEmpty() ? "Pemain tidak ditemukan." : "";
+                } catch (Exception e) {
+                    socialMessage = shortError(e);
+                } finally {
+                    socialBusy = false;
+                }
+            }
+        }, "online-search").start();
+    }
+
+    public void sendFriendRequest(final String target) {
+        if (!loggedIn) return;
+        socialBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_username", target);
+                    JSONObject result = SupabaseAuth.rpc("send_friend_request", args, session.accessToken);
+                    socialMessage = result.optString("message", "Permintaan dikirim.");
+                    loadFriendsInternal();
+                } catch (Exception e) {
+                    socialMessage = shortError(e);
+                } finally {
+                    socialBusy = false;
+                }
+            }
+        }, "online-friend-request").start();
+    }
+
+    public void respondFriendRequest(final String id, final boolean accept) {
+        if (!loggedIn) return;
+        socialBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_friendship_id", id);
+                    args.put("p_accept", accept);
+                    SupabaseAuth.rpc("respond_friend_request", args, session.accessToken);
+                    socialMessage = accept ? "Pertemanan diterima." : "Permintaan ditolak.";
+                    loadFriendsInternal();
+                } catch (Exception e) {
+                    socialMessage = shortError(e);
+                } finally {
+                    socialBusy = false;
+                }
+            }
+        }, "online-friend-response").start();
+    }
+
+    public void fetchFriends() {
+        if (!loggedIn) return;
+        socialBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    loadFriendsInternal();
+                } catch (Exception e) {
+                    socialMessage = shortError(e);
+                } finally {
+                    socialBusy = false;
+                }
+            }
+        }, "online-friends").start();
+    }
+
+    public void sendInvite(final String friendId) {
+        if (!loggedIn) return;
+        if (!hasRoom() || !host) {
+            socialMessage = "Buat room sebagai host dulu.";
+            return;
+        }
+        socialBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_friend_id", friendId);
+                    args.put("p_room_id", roomId);
+                    SupabaseAuth.rpc("send_game_invite", args, session.accessToken);
+                    socialMessage = "Undangan dikirim.";
+                } catch (Exception e) {
+                    socialMessage = shortError(e);
+                } finally {
+                    socialBusy = false;
+                }
+            }
+        }, "online-invite").start();
+    }
+
+    public void respondInvite(final String id, final boolean accept) {
+        if (!loggedIn) return;
+        InviteRow current = pendingInvite;
+        if (current != null && current.id.equals(id)) pendingInvite = null;
+        socialBusy = true;
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_invite_id", id);
+                    args.put("p_accept", accept);
+                    JSONObject result = SupabaseAuth.rpc("respond_game_invite", args, session.accessToken);
+                    if (accept) {
+                        inviteJoinCode = result.optString("room_code", "");
+                        if (inviteJoinCode.length() == 0 && current != null) inviteJoinCode = current.roomCode;
+                        socialMessage = inviteJoinCode.length() == 0 ? "Room tidak tersedia." : "Bergabung ke room teman.";
+                    } else {
+                        socialMessage = "Undangan ditolak.";
+                    }
+                } catch (Exception e) {
+                    socialMessage = shortError(e);
+                    if (current != null) pendingInvite = current;
+                } finally {
+                    socialBusy = false;
+                }
+            }
+        }, "online-invite-response").start();
+    }
+
+    public String takeInviteJoinCode() {
+        String code = inviteJoinCode;
+        inviteJoinCode = "";
+        return code;
+    }
+
+    public void fetchInvites() {
+        if (!loggedIn) return;
+        loadInvites(true);
+    }
+
+    private void loadInvites(final boolean manual) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONArray arr = SupabaseAuth.rpcArray("list_game_invites", new JSONObject(), session.accessToken);
+                    ArrayList<InviteRow> rows = new ArrayList<>();
+                    for (int i = 0; i < arr.length(); i++) {
+                        JSONObject o = arr.optJSONObject(i);
+                        if (o == null) continue;
+                        InviteRow r = new InviteRow();
+                        r.id = o.optString("id", "");
+                        r.fromId = o.optString("from_id", "");
+                        r.fromName = o.optString("from_name", "Pemain");
+                        r.roomId = o.optString("room_id", "");
+                        r.roomCode = o.optString("room_code", "");
+                        r.createdAt = o.optString("created_at", "");
+                        if (r.id.length() > 0) rows.add(r);
+                    }
+                    InviteRow current = pendingInvite;
+                    InviteRow match = null;
+                    for (int i = 0; i < rows.size(); i++) {
+                        if (current != null && rows.get(i).id.equals(current.id)) match = rows.get(i);
+                    }
+                    if (match != null) pendingInvite = match;
+                    else if (current == null && !rows.isEmpty()) pendingInvite = rows.get(0);
+                    else if (current != null) pendingInvite = null;
+                    if (manual && rows.isEmpty()) socialMessage = "Tidak ada undangan.";
+                } catch (Exception e) {
+                    if (manual) socialMessage = shortError(e);
+                }
+            }
+        }, "online-invites").start();
+    }
+
+    private void loadFriendsInternal() throws Exception {
+        JSONArray fa = SupabaseAuth.rpcArray("list_friends", new JSONObject(), session.accessToken);
+        ArrayList<FriendRow> fr = new ArrayList<>();
+        for (int i = 0; i < fa.length(); i++) {
+            JSONObject o = fa.optJSONObject(i);
+            if (o != null) fr.add(friendRow(o));
+        }
+        JSONArray ra = SupabaseAuth.rpcArray("list_friend_requests", new JSONObject(), session.accessToken);
+        ArrayList<FriendRow> rq = new ArrayList<>();
+        for (int i = 0; i < ra.length(); i++) {
+            JSONObject o = ra.optJSONObject(i);
+            if (o != null) rq.add(friendRow(o));
+        }
+        friends = fr;
+        requests = rq;
+    }
+
+    private static PlayerRow playerRow(JSONObject o) {
+        PlayerRow r = new PlayerRow();
+        r.id = o.optString("id", "");
+        r.username = o.optString("username", "");
+        r.level = Math.max(1, o.optInt("level", 1));
+        r.wins = Math.max(0, o.optInt("wins", 0));
+        r.totalGames = Math.max(0, o.optInt("total_games", 0));
+        r.maxStage = Math.max(0, o.optInt("max_stage", 0));
+        r.verified = o.optBoolean("verified", false);
+        r.me = o.optBoolean("is_me", false);
+        r.rank = Math.max(0, o.optInt("rank", 0));
+        r.friendStatus = o.optString("friend_status", "none");
+        return r;
+    }
+
+    private static FriendRow friendRow(JSONObject o) {
+        FriendRow r = new FriendRow();
+        r.id = o.optString("id", "");
+        r.username = o.optString("username", "");
+        r.level = Math.max(1, o.optInt("level", 1));
+        r.wins = Math.max(0, o.optInt("wins", 0));
+        r.verified = o.optBoolean("verified", false);
+        r.createdAt = o.optString("created_at", "");
+        return r;
     }
 
     public void createRoom(final int limit) {
@@ -254,6 +595,10 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
 
     public void tick() {
         long now = System.currentTimeMillis();
+        if (loggedIn && session != null && !socialBusy && now - lastInvitePoll > 3000L) {
+            lastInvitePoll = now;
+            loadInvites(false);
+        }
         Iterator<Remote> it = members.values().iterator();
         while (it.hasNext()) {
             Remote r = it.next();
@@ -485,12 +830,17 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
 
     private void applySession(SupabaseAuth.Session value) {
         session = value;
-        username = value.username;
+        String nextUser = value.username == null ? "" : value.username;
+        boolean userChanged = !nextUser.equals(username == null ? "" : username);
+        username = nextUser;
         loggedIn = true;
+        if (userChanged) save.ownerMode = false;
         if (value.username != null && value.username.length() > 0) {
             save.playerName = value.username;
+            save.save();
         }
         ensureSelfMember();
+        syncProfile();
     }
 
     private void ensureSelfMember() {

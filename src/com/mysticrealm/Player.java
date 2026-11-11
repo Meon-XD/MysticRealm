@@ -149,10 +149,11 @@ public class Player {
     }
 
     public void tryAttack() {
-        if (dead || attackCd > 0 || gp.puzzleOpen) return;
+        boolean owner = save.isOwner();
+        if (dead || (!owner && attackCd > 0) || gp.puzzleOpen) return;
         Catalog.ClassDef c = classDef();
         int cls = save.classIndex;
-        attackCd = cls == 2 ? 0.27f : (cls == 1 ? 0.46f : 0.38f);
+        attackCd = owner ? 0.08f : (cls == 2 ? 0.27f : (cls == 1 ? 0.46f : 0.38f));
         attackAnim = 0.2f;
         if (!gp.mouseAimActive()) faceNearest();
 
@@ -175,12 +176,13 @@ public class Player {
     public boolean castSkill(int i) {
         if (dead || i < 0 || i > 2) return false;
         Catalog.Skill s = Catalog.SKILLS[save.classIndex][i];
-        if (cd[i] > 0) {
+        boolean owner = save.isOwner();
+        if (!owner && cd[i] > 0) {
             gp.toast("Skill masih cooldown");
             gp.audio.play("deny");
             return false;
         }
-        if (mp < s.mp) {
+        if (!owner && mp < s.mp) {
             gp.toast("MP tidak cukup");
             gp.audio.play("deny");
             return false;
@@ -199,7 +201,7 @@ public class Player {
                 return false;
             }
             mp -= s.mp;
-            cd[i] = s.cd * (1f - 0.035f * lvl);
+            cd[i] = owner ? 0f : s.cd * (1f - 0.035f * lvl);
             float tx = target.x - (float) Math.cos(Math.atan2(target.y - y, target.x - x)) * 55;
             float ty = target.y - (float) Math.sin(Math.atan2(target.y - y, target.x - x)) * 55;
             gp.fxTrail(x, y, tx, ty, c.color);
@@ -209,6 +211,7 @@ public class Player {
             dir = (float) Math.atan2(target.y - y, target.x - x);
             gp.areaDamage(target.x, target.y, 110, atk * mult, 1f, 0.4f, 0, c.color);
             invuln = Math.max(invuln, 0.55f);
+            if (owner) mp = maxMp;
             gp.fxExplosion(target.x, target.y, 120, c.color);
             gp.shake(10);
             gp.audio.play("skill");
@@ -217,7 +220,7 @@ public class Player {
 
         if (s.kind == Catalog.SKILL_ASS_STEP) {
             mp -= s.mp;
-            cd[i] = s.cd * (1f - 0.035f * lvl);
+            cd[i] = owner ? 0f : s.cd * (1f - 0.035f * lvl);
             float mag = 190f;
             float nx = x + (float) Math.cos(dir) * mag;
             float ny = y + (float) Math.sin(dir) * mag;
@@ -227,13 +230,14 @@ public class Player {
             y = ny;
             gp.world.resolve(this, radius);
             invuln = Math.max(invuln, 0.5f);
+            if (owner) mp = maxMp;
             gp.audio.play("dodge");
             gp.shake(5);
             return true;
         }
 
         mp -= s.mp;
-        cd[i] = s.cd * (1f - 0.035f * lvl);
+        cd[i] = owner ? 0f : s.cd * (1f - 0.035f * lvl);
         gp.audio.play("skill");
 
         switch (s.kind) {
@@ -301,12 +305,14 @@ public class Player {
             default:
                 break;
         }
+        if (owner) mp = maxMp;
         return true;
     }
 
     public void dodge() {
-        if (dead || dodgeCd > 0) return;
-        dodgeCd = 1.6f;
+        boolean owner = save.isOwner();
+        if (dead || (!owner && dodgeCd > 0)) return;
+        dodgeCd = owner ? 0f : 1.6f;
         dash = 0.24f;
         dashDir = dir;
         invuln = Math.max(invuln, 0.5f);

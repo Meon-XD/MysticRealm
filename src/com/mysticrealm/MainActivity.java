@@ -10,6 +10,7 @@ import android.view.WindowManager;
 public class MainActivity extends Activity {
     private GameView view;
     private Game game;
+    private CinematicDialog cinematic;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,13 +54,18 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         hideSystemUi();
-        game.onResume();
+        if (cinematic != null) {
+            cinematic.resume();
+        } else {
+            game.onResume();
+        }
         if (view != null) view.start();
     }
 
     @Override
     protected void onPause() {
         super.onPause();
+        if (cinematic != null) cinematic.pause();
         if (view != null) view.stop();
         game.onPause();
     }
@@ -67,7 +73,23 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (cinematic != null) {
+            cinematic.dismiss();
+            cinematic = null;
+        }
         if (game != null) game.shutdown();
+    }
+
+    public void playCinematic(String kind, final Runnable onDone) {
+        if (cinematic != null) return;
+        int res = "ending".equals(kind) ? R.raw.cinematic_ending : R.raw.cinematic_opening;
+        cinematic = new CinematicDialog(this, res, new CinematicDialog.Listener() {
+            public void onCinematicFinished() {
+                cinematic = null;
+                onDone.run();
+            }
+        });
+        cinematic.show();
     }
 
     @Override

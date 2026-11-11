@@ -1402,7 +1402,7 @@ public class Gameplay {
         else if (clearQueued) obj = "Stage selesai...";
         else if (puzzleResolved && bossSpawned) obj = "Jalan menuju puncak terbuka";
         else if (remainingEnemies() > 0) obj = "Musuh tersisa: " + remainingEnemies();
-        else if (!puzzleResolved) obj = "Altar aktif - dekati untuk teka-teki";
+        else if (!puzzleResolved) obj = "Altar terbuka";
         else obj = "Bersiap...";
         float ow = g.textWidth(obj, 16 * u, true) + 40 * u;
         g.panel(c, viewW / 2f - ow / 2f, 12 * u, ow, 30 * u, 0xAA150F24, 0x446B5A96);

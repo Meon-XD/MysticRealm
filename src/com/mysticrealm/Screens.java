@@ -74,6 +74,22 @@ public class Screens {
     public static final int ONLINE_STAGE_NEXT = 150;
     public static final int ONLINE_CODE = 151;
     public static final int ONLINE_LAN = 152;
+    public static final int MENU_PROFILE = 153;
+    public static final int MENU_ACHIEVEMENTS = 154;
+    public static final int MENU_FRIENDS = 155;
+    public static final int MENU_LEADERBOARD = 156;
+    public static final int MENU_HELP = 157;
+    public static final int INVITE_ACCEPT = 160;
+    public static final int INVITE_DECLINE = 161;
+    public static final int SOCIAL_SEARCH = 162;
+    public static final int SOCIAL_REFRESH = 163;
+    public static final int FRIEND_INVITE = 164;
+    public static final int PROFILE_ACHIEVEMENTS = 165;
+    public static final int PROFILE_FRIENDS = 166;
+    public static final int PROFILE_LEADERBOARD = 167;
+    public static final int LEADERBOARD_REFRESH = 168;
+    public static final int HELP_PREV = 169;
+    public static final int HELP_NEXT = 170;
     public static final int INPUT_BACKSPACE = 550;
     public static final int INPUT_CLEAR = 551;
     public static final int INPUT_CANCEL = 552;
@@ -82,6 +98,12 @@ public class Screens {
     public static final int INPUT_KEY_BASE = 600;
     public static final int ITEM_ROW_BASE = 300;
     public static final int SHOP_ROW_BASE = 400;
+    public static final int FRIEND_ROW_BASE = 900;
+    public static final int FRIEND_ACCEPT_BASE = 920;
+    public static final int FRIEND_DECLINE_BASE = 940;
+    public static final int ADD_FRIEND_BASE = 960;
+    public static final int OWNER_SKILL_DOWN_BASE = 980;
+    public static final int OWNER_SKILL_UP_BASE = 990;
 
     static class Btn {
         float x, y, w, h;
@@ -225,11 +247,27 @@ public class Screens {
             case Game.ONLINE_LOBBY:
                 drawOnline(c, g);
                 break;
+            case Game.PROFILE:
+                drawProfile(c, g);
+                break;
+            case Game.ACHIEVEMENTS:
+                drawAchievements(c, g);
+                break;
+            case Game.HELP:
+                drawHelp(c, g);
+                break;
+            case Game.FRIENDS:
+                drawFriends(c, g);
+                break;
+            case Game.LEADERBOARD:
+                drawLeaderboard(c, g);
+                break;
             default:
                 drawMenu(c, g);
                 break;
         }
         if (game.inputActive) drawInput(c, g);
+        else drawInvite(c, g);
         drawNotice(c, g);
     }
 
@@ -239,41 +277,307 @@ public class Screens {
         float w = W(), h = H(), u = u();
         bg(c, g);
 
-        g.textShadow(c, "MYSTIC", w / 2f, h * 0.22f, 78 * u, Gfx.TEXT, 1, true);
-        g.textShadow(c, "REALM", w / 2f, h * 0.22f + 74 * u, 78 * u, Gfx.GOLD, 1, true);
-        g.text(c, "Action RPG  •  Teka-teki  •  Tiga Jalan Takdir", w / 2f, h * 0.22f + 132 * u, 16 * u, Gfx.DIM, 1, false);
-
-        float bw = 360 * u, bh = 48 * u;
-        float bx = w / 2f - bw / 2f;
-        float y = h * 0.40f;
-        float gap = 8 * u;
-        if (save().hasCharacter) {
-            button(c, g, bx, y, bw, bh, "Lanjutkan  •  Lv " + save().level, CONTINUE, 1);
-            y += bh + gap;
+        g.textShadow(c, "MYSTIC", 44 * u, 62 * u, 34 * u, Gfx.TEXT, 0, true);
+        g.textShadow(c, "REALM", 44 * u, 94 * u, 34 * u, Gfx.GOLD, 0, true);
+        g.text(c, "v1.2  •  Meon-XD", w - 30 * u, 42 * u, 12 * u, Gfx.DIM, 2, false);
+        if (save().isOwner()) {
+            g.roundRect(c, w - 150 * u, 58 * u, 120 * u, 26 * u, 13 * u, 0x553FD68A);
+            g.text(c, "OWNER", w - 90 * u, 71 * u, 11 * u, Gfx.GREEN, 1, true);
         }
-        button(c, g, bx, y, bw, bh, save().hasCharacter ? "Petualangan Baru" : "Mulai Petualangan", NEW_GAME, save().hasCharacter ? 0 : 1);
-        y += bh + gap;
-        button(c, g, bx, y, bw, bh, "Co-op Online", MENU_MULTIPLAYER, 0);
-        y += bh + gap;
-        button(c, g, bx, y, bw, bh, "Co-op LAN", MENU_LAN, 0);
-        y += bh + gap;
-        button(c, g, bx, y, bw, bh, "Nama: " + save().playerName, MENU_NAME, 0);
-        y += bh + gap;
-        button(c, g, bx, y, bw, bh, "Pengaturan", MENU_SETTINGS, 0);
-        y += bh + gap;
-        button(c, g, bx, y, bw, bh, "Keluar", QUIT, 2);
 
+        float lx = 40 * u, ly = 140 * u;
+        float lw = w * 0.34f, lh = h - 240 * u;
+        g.panel(c, lx, ly, lw, lh, 0xCC150F24, 0x446B5A96);
+
+        Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(save().classIndex, 0, 2)];
+        float ax = lx + lw / 2f, ay = ly + 96 * u;
+        g.circle(c, ax, ay, 64 * u, Gfx.withAlpha(cd.color, 34));
+        g.circleStroke(c, ax, ay, 54 * u, cd.color, 3 * u);
+        drawClassIcon(c, g, save().classIndex, ax, ay, cd.color, u * 1.35f);
+        g.textShadow(c, save().playerName, ax, ly + 190 * u, 26 * u, Gfx.TEXT, 1, true);
+        if (save().isOwner()) g.text(c, "VERIFIED OWNER", ax, ly + 214 * u, 11 * u, Gfx.GREEN, 1, true);
+        g.text(c, cd.name + "  •  Lv " + save().level, ax, ly + 242 * u, 15 * u, cd.color, 1, true);
+        g.text(c, "Stage " + Math.max(1, save().maxStage + 1) + "  •  " + save().worldsCleared() + "/5 dunia",
+                ax, ly + 268 * u, 13 * u, Gfx.DIM, 1, false);
+        g.text(c, save().gold + " gold  •  " + save().shards + " shard", ax, ly + 292 * u, 13 * u, Gfx.GOLD, 1, false);
+        g.text(c, "Tiga jalan, satu takdir.", ax, ly + 330 * u, 13 * u, Gfx.DIM, 1, false);
+        button(c, g, lx + 24 * u, ly + lh - 66 * u, lw - 48 * u, 42 * u,
+                "Ubah Nama: " + save().playerName, MENU_NAME, 3);
+
+        float gx = w * 0.44f, gy = 140 * u;
+        float gw = w - gx - 40 * u;
+        float gap = 10 * u;
+        float bw = (gw - gap) / 2f, bh = 58 * u;
+        int row = 0;
+        int col = 0;
         if (save().hasCharacter) {
-            Catalog.ClassDef cd = Catalog.CLASSES[save().classIndex];
-            g.text(c, cd.name + "  •  " + Catalog.DIFFICULTY[save().difficulty]
-                            + "  •  " + save().gold + " gold  •  " + save().shards + " shard",
-                    w / 2f, h - 46 * u, 13 * u, Gfx.DIM, 1, false);
-        } else {
-            g.text(c, "Sentuh untuk memulai perjalananmu", w / 2f, h - 46 * u, 13 * u, Gfx.DIM, 1, false);
+            menuButton(c, g, gx, gy, bw, bh, "Lanjutkan", "Lv " + save().level, CONTINUE, 1, row, col);
+            col++;
         }
-        g.text(c, "Dibuat oleh Meon-XD", w / 2f, h - 20 * u, 13 * u, Gfx.GOLD, 1, true);
+        menuButton(c, g, gx + col * (bw + gap), gy, bw, bh, save().hasCharacter ? "Baru" : "Mulai", "Petualangan", NEW_GAME,
+                save().hasCharacter ? 0 : 1, row, col);
+        col++;
+        if (col == 2) { col = 0; row++; }
+        menuButton(c, g, gx + col * (bw + gap), gy + row * (bh + gap), bw, bh, "Co-op", "Online", MENU_MULTIPLAYER, 0, row, col);
+        col++;
+        menuButton(c, g, gx + col * (bw + gap), gy + row * (bh + gap), bw, bh, "Co-op", "LAN", MENU_LAN, 0, row, col);
+        col = 0; row++;
+        menuButton(c, g, gx, gy + row * (bh + gap), bw, bh, "Teman", "Cari & undang", MENU_FRIENDS, 0, row, col);
+        col++;
+        menuButton(c, g, gx + col * (bw + gap), gy + row * (bh + gap), bw, bh, "Peringkat", "Leaderboard", MENU_LEADERBOARD, 0, row, col);
+        col = 0; row++;
+        menuButton(c, g, gx, gy + row * (bh + gap), bw, bh, "Profil", save().playerName, MENU_PROFILE, 0, row, col);
+        col++;
+        menuButton(c, g, gx + col * (bw + gap), gy + row * (bh + gap), bw, bh, "Pencapaian", "Koleksi lencana", MENU_ACHIEVEMENTS, 0, row, col);
+        col = 0; row++;
+        menuButton(c, g, gx, gy + row * (bh + gap), bw, bh, "Cara", "Bermain", MENU_HELP, 0, row, col);
+        col++;
+        menuButton(c, g, gx + col * (bw + gap), gy + row * (bh + gap), bw, bh, "Pengaturan", "Audio & kontrol", MENU_SETTINGS, 0, row, col);
+
+        button(c, g, w - 190 * u, h - 78 * u, 150 * u, 46 * u, "Keluar", QUIT, 2);
+        g.text(c, "Dibuat oleh Meon-XD", 40 * u, h - 28 * u, 12 * u, Gfx.GOLD, 0, true);
 
         if (game.confirmNew) drawConfirm(c, g);
+    }
+
+    private void menuButton(Canvas c, Gfx g, float x, float y, float w, float h,
+                            String title, String sub, int id, int style, int row, int col) {
+        button(c, g, x, y, w, h, "", id, style);
+        float u = u();
+        int color = style == 1 ? 0xFFFFF4D8 : Gfx.TEXT;
+        g.text(c, title, x + 18 * u, y + 24 * u, 16 * u, color, 0, true);
+        g.text(c, sub, x + 18 * u, y + 43 * u, 11 * u, style == 1 ? 0xFFE9C46A : Gfx.DIM, 0, false);
+    }
+
+    private int friendCount() {
+        OnlineCoop o = game.online;
+        return o == null ? 0 : o.friends.size();
+    }
+
+    private void drawInvite(Canvas c, Gfx g) {
+        OnlineCoop o = game.online;
+        if (o == null || !o.loggedIn || o.pendingInvite == null) return;
+        float w = W(), h = H(), u = u();
+        g.fill(0xAA000000);
+        c.drawRect(0, 0, w, h, g.p);
+        float pw = Math.min(560 * u, w - 60 * u), ph = 260 * u;
+        float px = w / 2f - pw / 2f, py = h / 2f - ph / 2f;
+        g.panel(c, px, py, pw, ph, 0xF01A1430, 0x889B5DE5);
+        g.text(c, "UNDANGAN CO-OP", w / 2f, py + 42 * u, 20 * u, Gfx.GOLD, 1, true);
+        String from = o.pendingInvite.fromName.length() == 0 ? "Pemain" : o.pendingInvite.fromName;
+        g.wrap(c, from + " mengundang anda bermain bersama", w / 2f, py + 92 * u,
+                pw - 60 * u, 17 * u, Gfx.TEXT, 2, 1, true);
+        g.text(c, "Room " + o.pendingInvite.roomCode, w / 2f, py + 138 * u, 14 * u, Gfx.CYAN, 1, false);
+        button(c, g, px + 34 * u, py + ph - 76 * u, (pw - 82 * u) / 2f, 48 * u,
+                "Terima", INVITE_ACCEPT, 1);
+        button(c, g, px + pw / 2f + 7 * u, py + ph - 76 * u, (pw - 82 * u) / 2f, 48 * u,
+                "Tolak", INVITE_DECLINE, 2);
+    }
+
+    private void drawProfile(Canvas c, Gfx g) {
+        float w = W(), h = H(), u = u();
+        bg(c, g);
+        button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Menu", BACK, 3);
+        title(c, g, "PROFIL", 50 * u, 28 * u);
+        Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(save().classIndex, 0, 2)];
+        float px = 60 * u, py = 130 * u, pw = w - 120 * u, ph = h - 220 * u;
+        g.panel(c, px, py, pw, ph, 0xCC150F24, 0x446B5A96);
+        float ax = px + 150 * u, ay = py + 130 * u;
+        g.circle(c, ax, ay, 78 * u, Gfx.withAlpha(cd.color, 34));
+        g.circleStroke(c, ax, ay, 66 * u, cd.color, 3 * u);
+        drawClassIcon(c, g, save().classIndex, ax, ay, cd.color, u * 1.7f);
+        g.textShadow(c, save().playerName, px + 300 * u, py + 76 * u, 30 * u, Gfx.TEXT, 0, true);
+        if (save().isOwner()) g.text(c, "VERIFIED OWNER", px + 302 * u, py + 102 * u, 12 * u, Gfx.GREEN, 0, true);
+        g.text(c, cd.name + "  •  Level " + save().level + "  •  " + Catalog.DIFFICULTY[save().difficulty],
+                px + 300 * u, py + 138 * u, 15 * u, cd.color, 0, true);
+        g.text(c, "Stage " + Math.max(1, save().maxStage + 1) + "  •  " + save().worldsCleared() + "/5 dunia",
+                px + 300 * u, py + 166 * u, 13 * u, Gfx.DIM, 0, false);
+        g.text(c, save().gold + " gold  •  " + save().shards + " shard  •  " + save().points + " poin",
+                px + 300 * u, py + 190 * u, 13 * u, Gfx.GOLD, 0, false);
+        g.text(c, Achievements.unlockedCount(save(), friendCount()) + "/" + Achievements.LIST.length + " pencapaian",
+                px + 300 * u, py + 214 * u, 13 * u, Gfx.CYAN, 0, false);
+        g.text(c, "Item " + save().items.size() + "  •  Teman " + friendCount(), px + 300 * u, py + 238 * u, 13 * u, Gfx.DIM, 0, false);
+
+        float by = py + ph - 150 * u;
+        float bw = (pw - 160 * u) / 3f;
+        button(c, g, px + 40 * u, by, bw, 48 * u, "Pencapaian", PROFILE_ACHIEVEMENTS, 0);
+        button(c, g, px + 60 * u + bw, by, bw, 48 * u, "Teman", PROFILE_FRIENDS, 0);
+        button(c, g, px + 80 * u + bw * 2, by, bw, 48 * u, "Peringkat", PROFILE_LEADERBOARD, 0);
+        g.text(c, "Terus bertarung untuk membuka lencana dan menaiki peringkat.",
+                w / 2f, py + ph - 56 * u, 12 * u, Gfx.DIM, 1, false);
+    }
+
+    private void drawAchievements(Canvas c, Gfx g) {
+        float w = W(), h = H(), u = u();
+        bg(c, g);
+        button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Kembali", BACK, 3);
+        title(c, g, "PENCAPAIAN", 50 * u, 28 * u);
+        int fc = friendCount();
+        g.text(c, Achievements.unlockedCount(save(), fc) + " / " + Achievements.LIST.length,
+                w / 2f, 102 * u, 14 * u, Gfx.GOLD, 1, true);
+        float left = 40 * u, top = 130 * u;
+        float cw = (w - 100 * u) / 2f, ch = 74 * u, gap = 10 * u;
+        for (int i = 0; i < Achievements.LIST.length; i++) {
+            Achievements.Def d = Achievements.LIST[i];
+            int col = i % 2, row = i / 2;
+            float x = left + col * (cw + gap), y = top + row * (ch + gap);
+            boolean ok = Achievements.unlocked(save(), i, fc);
+            int p = Achievements.progress(save(), i, fc);
+            g.roundRect(c, x, y, cw, ch, 10 * u, ok ? 0xCC1D2C24 : 0xCC171226);
+            g.roundRectStroke(c, x, y, cw, ch, 10 * u, ok ? 0x883FD68A : 0x446B5A96, 1.4f * u);
+            g.circle(c, x + 34 * u, y + 37 * u, 18 * u, ok ? 0x553FD68A : 0x442E2844);
+            g.text(c, ok ? "✓" : "•", x + 34 * u, y + 37 * u, 16 * u, ok ? Gfx.GREEN : Gfx.DIM, 1, true);
+            g.text(c, d.name, x + 62 * u, y + 26 * u, 15 * u, ok ? Gfx.TEXT : Gfx.DIM, 0, true);
+            g.text(c, d.desc, x + 62 * u, y + 46 * u, 11 * u, Gfx.DIM, 0, false);
+            String val = d.kind == Achievements.SKILL ? (ok ? "Selesai" : "0/" + d.target)
+                    : Math.min(p, d.target) + "/" + d.target;
+            g.text(c, val, x + cw - 16 * u, y + 26 * u, 11 * u, ok ? Gfx.GREEN : Gfx.DIM, 2, true);
+            float pct = d.target <= 0 ? 1f : Gfx.clamp(p / (float) d.target, 0f, 1f);
+            g.roundRect(c, x + 62 * u, y + ch - 16 * u, cw - 80 * u, 4 * u, 2 * u, 0x55101018);
+            g.roundRect(c, x + 62 * u, y + ch - 16 * u, (cw - 80 * u) * pct, 4 * u, 2 * u,
+                    ok ? Gfx.GREEN : Gfx.ACCENT);
+        }
+    }
+
+    private void drawHelp(Canvas c, Gfx g) {
+        float w = W(), h = H(), u = u();
+        bg(c, g);
+        button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Kembali", BACK, 3);
+        title(c, g, "CARA BERMAIN", 50 * u, 28 * u);
+        boolean owner = save().isOwner();
+        int pages = owner ? 6 : 5;
+        int page = Gfx.clamp(game.helpPage, 0, pages - 1);
+        String[] titles = {"DASAR", "ALUR PERMAINAN", "PROGRES", "CO-OP", "KONTROL", "OWNER"};
+        String[] bodies = {
+                "Pilih satu dari tiga kelas: Ksatria tahan banting, Penyihir dengan sihir jarak jauh, atau Pembunuh yang lincah.\n\nSetiap kelas punya tiga skill dan enam jalur talenta. Gunakan auto-aim dengan menekan tombol serangan; arahkan joystick untuk bergerak dan menghindar.",
+                "Selesaikan stage berurutan di setiap dunia. Kalahkan musuh, aktifkan altar teka-teki, lalu hadapi bos di akhir dunia. Stage yang selesai membuka stage berikutnya dan meningkatkan hadiah.",
+                "Naik level untuk mendapat poin skill dan talenta. Kumpulkan gold dan shard dari musuh serta peti. Equip item terbaik, tingkatkan skill, dan selesaikan dunia untuk membuka kesulitan yang lebih tinggi.",
+                "Co-op Online memakai server internet dan mendukung 2-4 pemain. Co-op LAN memakai hotspot atau WiFi yang sama. Host memilih stage; semua pemain mengikuti. Pemain yang terhubung akan tampil di lobby.",
+                "Gerak: joystick kiri. Serang: tombol serangan (auto-aim). Skill: tombol 1-3. Dodge: tombol dash. Menu jeda tersedia di pojok layar. Mouse dan keyboard juga didukung di desktop.",
+                "Mode owner aktif untuk nama meon_xd. Mana, cooldown, dan biaya upgrade dibebaskan. Gunakan tombol - dan + pada layar Skill untuk mengatur level secara langsung. Badge owner tampil di profil dan lobby."
+        };
+        float pw = Math.min(860 * u, w - 80 * u), ph = h - 260 * u;
+        float px = w / 2f - pw / 2f, py = 130 * u;
+        g.panel(c, px, py, pw, ph, 0xCC150F24, 0x446B5A96);
+        g.text(c, titles[page], px + 34 * u, py + 42 * u, 20 * u, Gfx.GOLD, 0, true);
+        g.wrap(c, bodies[page], px + 34 * u, py + 84 * u, pw - 68 * u, 15 * u, Gfx.TEXT, 12, 0, false);
+        for (int i = 0; i < pages; i++) {
+            g.circle(c, px + pw / 2f + (i - (pages - 1) / 2f) * 18 * u, py + ph - 34 * u,
+                    4 * u, i == page ? Gfx.GOLD : 0x556B5A96);
+        }
+        if (page > 0) button(c, g, px + 30 * u, py + ph - 70 * u, 110 * u, 42 * u, "‹ Sebelumnya", HELP_PREV, 3);
+        if (page < pages - 1) button(c, g, px + pw - 140 * u, py + ph - 70 * u, 110 * u, 42 * u, "Berikutnya ›", HELP_NEXT, 0);
+    }
+
+    private void drawFriends(Canvas c, Gfx g) {
+        float w = W(), h = H(), u = u();
+        bg(c, g);
+        button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Menu", BACK, 3);
+        title(c, g, "TEMAN", 50 * u, 28 * u);
+        OnlineCoop o = game.online;
+        if (o == null || !o.loggedIn) {
+            g.panel(c, w / 2f - 280 * u, h / 2f - 80 * u, 560 * u, 160 * u, 0xCC150F24, 0x446B5A96);
+            g.text(c, "Masuk ke akun online terlebih dahulu.", w / 2f, h / 2f - 20 * u, 16 * u, Gfx.TEXT, 1, true);
+            g.text(c, "Buka Co-op Online untuk masuk atau mendaftar.", w / 2f, h / 2f + 12 * u, 12 * u, Gfx.DIM, 1, false);
+            return;
+        }
+        float lx = 40 * u, ly = 120 * u, lw = (w - 100 * u) * 0.58f;
+        float rx = lx + lw + 20 * u, rw = w - rx - 40 * u;
+        g.panel(c, lx, ly, lw, h - 190 * u, 0xCC150F24, 0x446B5A96);
+        g.panel(c, rx, ly, rw, h - 190 * u, 0xCC150F24, 0x446B5A96);
+        g.text(c, "CARI PEMAIN", lx + 20 * u, ly + 28 * u, 14 * u, Gfx.GOLD, 0, true);
+        button(c, g, lx + 20 * u, ly + 44 * u, lw - 150 * u, 42 * u,
+                game.searchQuery.length() == 0 ? "Ketik username..." : game.searchQuery, SOCIAL_SEARCH, 3);
+        button(c, g, lx + lw - 120 * u, ly + 44 * u, 100 * u, 42 * u, "Cari", SOCIAL_SEARCH, 0);
+        float y = ly + 104 * u;
+        if (!o.searchResults.isEmpty()) {
+            g.text(c, "HASIL", lx + 20 * u, y, 11 * u, Gfx.DIM, 0, true);
+            y += 18 * u;
+            for (int i = 0; i < o.searchResults.size() && i < 3; i++) {
+                OnlineCoop.PlayerRow r = o.searchResults.get(i);
+                g.text(c, r.username + "  Lv " + r.level, lx + 20 * u, y + 24 * u, 13 * u, Gfx.TEXT, 0, true);
+                String st = r.friendStatus;
+                if (st.equals("none")) button(c, g, lx + lw - 130 * u, y + 4 * u, 110 * u, 34 * u, "Tambah", ADD_FRIEND_BASE + i, 0);
+                else g.text(c, st.equals("accepted") ? "Teman" : "Menunggu", lx + lw - 80 * u, y + 24 * u, 11 * u, Gfx.DIM, 2, false);
+                y += 44 * u;
+            }
+            y += 8 * u;
+        }
+        g.text(c, "TEMAN (" + o.friends.size() + ")", lx + 20 * u, y + 12 * u, 12 * u, Gfx.GOLD, 0, true);
+        y += 28 * u;
+        for (int i = 0; i < o.friends.size() && i < 5; i++) {
+            OnlineCoop.FriendRow r = o.friends.get(i);
+            boolean sel = r.id.equals(o.selectedFriendId);
+            g.roundRect(c, lx + 16 * u, y, lw - 32 * u, 42 * u, 8 * u, sel ? 0x662A2044 : 0x44120E20);
+            g.text(c, r.username + (r.verified ? "  ✓" : ""), lx + 30 * u, y + 22 * u, 13 * u,
+                    sel ? Gfx.GOLD : Gfx.TEXT, 0, true);
+            g.text(c, "Lv " + r.level, lx + lw - 70 * u, y + 22 * u, 11 * u, Gfx.DIM, 2, false);
+            reg(lx + 16 * u, y, lw - 32 * u, 42 * u, FRIEND_ROW_BASE + i);
+            y += 48 * u;
+        }
+        if (o.friends.isEmpty()) g.text(c, "Belum ada teman. Cari username di atas.", lx + 20 * u, y + 18 * u, 12 * u, Gfx.DIM, 0, false);
+
+        g.text(c, "PERMINTAAN MASUK", rx + 20 * u, ly + 28 * u, 13 * u, Gfx.GOLD, 0, true);
+        float ry = ly + 52 * u;
+        for (int i = 0; i < o.requests.size() && i < 5; i++) {
+            OnlineCoop.FriendRow r = o.requests.get(i);
+            g.text(c, r.username, rx + 20 * u, ry + 18 * u, 13 * u, Gfx.TEXT, 0, true);
+            button(c, g, rx + rw - 150 * u, ry, 62 * u, 34 * u, "Ya", FRIEND_ACCEPT_BASE + i, 1);
+            button(c, g, rx + rw - 80 * u, ry, 62 * u, 34 * u, "Tidak", FRIEND_DECLINE_BASE + i, 2);
+            ry += 44 * u;
+        }
+        if (o.requests.isEmpty()) g.text(c, "Tidak ada permintaan baru.", rx + 20 * u, ry + 16 * u, 12 * u, Gfx.DIM, 0, false);
+        button(c, g, rx + 20 * u, ly + h - 340 * u, rw - 40 * u, 46 * u, "Undang Teman ke Room", FRIEND_INVITE, 1);
+        g.text(c, o.host && o.hasRoom() ? "Room siap diundang." : "Buat room sebagai host untuk mengundang.",
+                rx + rw / 2f, ly + h - 306 * u, 11 * u, Gfx.DIM, 1, false);
+        button(c, g, rx + 20 * u, ly + h - 240 * u, rw - 40 * u, 40 * u, "Muat Ulang", SOCIAL_REFRESH, 3);
+        if (o.socialMessage.length() > 0) {
+            g.wrap(c, o.socialMessage, w / 2f, h - 56 * u, w - 100 * u, 12 * u, Gfx.CYAN, 2, 1, false);
+        }
+    }
+
+    private void drawLeaderboard(Canvas c, Gfx g) {
+        float w = W(), h = H(), u = u();
+        bg(c, g);
+        button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Menu", BACK, 3);
+        title(c, g, "PERINGKAT", 50 * u, 28 * u);
+        OnlineCoop o = game.online;
+        if (o == null || !o.loggedIn) {
+            g.panel(c, w / 2f - 280 * u, h / 2f - 80 * u, 560 * u, 160 * u, 0xCC150F24, 0x446B5A96);
+            g.text(c, "Masuk ke akun online untuk melihat peringkat.", w / 2f, h / 2f - 20 * u, 16 * u, Gfx.TEXT, 1, true);
+            g.text(c, "Buka Co-op Online untuk masuk atau mendaftar.", w / 2f, h / 2f + 12 * u, 12 * u, Gfx.DIM, 1, false);
+            return;
+        }
+        float pw = Math.min(880 * u, w - 80 * u), ph = h - 240 * u;
+        float px = w / 2f - pw / 2f, py = 130 * u;
+        g.panel(c, px, py, pw, ph, 0xCC150F24, 0x446B5A96);
+        g.text(c, "PERINGKAT PEMAIN", px + 28 * u, py + 34 * u, 14 * u, Gfx.GOLD, 0, true);
+        button(c, g, px + pw - 150 * u, py + 14 * u, 120 * u, 38 * u, "Muat Ulang", LEADERBOARD_REFRESH, 3);
+        float y = py + 66 * u;
+        g.text(c, "#", px + 28 * u, y, 11 * u, Gfx.DIM, 0, true);
+        g.text(c, "PEMAIN", px + 80 * u, y, 11 * u, Gfx.DIM, 0, true);
+        g.text(c, "LV", px + pw - 240 * u, y, 11 * u, Gfx.DIM, 2, true);
+        g.text(c, "MENANG", px + pw - 160 * u, y, 11 * u, Gfx.DIM, 2, true);
+        g.text(c, "STAGE", px + pw - 70 * u, y, 11 * u, Gfx.DIM, 2, true);
+        y += 12 * u;
+        for (int i = 0; i < o.leaderboard.size() && i < 12; i++) {
+            OnlineCoop.PlayerRow r = o.leaderboard.get(i);
+            float ry = y + i * 40 * u;
+            if (r.me) g.roundRect(c, px + 16 * u, ry, pw - 32 * u, 36 * u, 8 * u, 0x552A2044);
+            g.text(c, "" + (r.rank > 0 ? r.rank : i + 1), px + 28 * u, ry + 22 * u, 13 * u, Gfx.GOLD, 0, true);
+            g.text(c, r.username + (r.verified ? "  ✓" : ""), px + 80 * u, ry + 22 * u, 13 * u,
+                    r.me ? Gfx.GOLD : Gfx.TEXT, 0, true);
+            g.text(c, "" + r.level, px + pw - 240 * u, ry + 22 * u, 12 * u, Gfx.CYAN, 2, false);
+            g.text(c, "" + r.wins, px + pw - 160 * u, ry + 22 * u, 12 * u, Gfx.GREEN, 2, false);
+            g.text(c, "" + r.maxStage, px + pw - 70 * u, ry + 22 * u, 12 * u, Gfx.DIM, 2, false);
+        }
+        if (o.leaderboard.isEmpty()) {
+            g.text(c, o.socialBusy ? "Memuat peringkat..." : "Belum ada data peringkat.",
+                    w / 2f, py + ph / 2f, 14 * u, Gfx.DIM, 1, false);
+        }
+        if (o.socialMessage.length() > 0) {
+            g.text(c, o.socialMessage, w / 2f, h - 54 * u, 12 * u, Gfx.CYAN, 1, false);
+        }
     }
 
     private void drawConfirm(Canvas c, Gfx g) {
@@ -627,8 +931,17 @@ public class Screens {
             g.wrap(c, s.desc, left + 82 * u, ry + 70 * u, colW - 120 * u, 11 * u, Gfx.DIM, 2, 0, false);
             int cost = 100 * (lvl + 1);
             boolean can = lvl < Catalog.MAX_SKILL_LEVEL && save().points >= 1 && save().gold >= cost;
-            button(c, g, left + colW - 180 * u, ry + 66 * u, 150 * u, 38 * u,
-                    lvl >= Catalog.MAX_SKILL_LEVEL ? "MAX" : "+1  (" + cost + "g)", SKILL_UP_BASE + i, can ? 1 : 3);
+            if (save().isOwner()) {
+                button(c, g, left + colW - 250 * u, ry + 66 * u, 52 * u, 38 * u,
+                        "-", OWNER_SKILL_DOWN_BASE + i, lvl > 0 ? 0 : 3);
+                button(c, g, left + colW - 192 * u, ry + 66 * u, 52 * u, 38 * u,
+                        "+", OWNER_SKILL_UP_BASE + i, lvl < Catalog.MAX_SKILL_LEVEL ? 0 : 3);
+                button(c, g, left + colW - 132 * u, ry + 66 * u, 100 * u, 38 * u,
+                        "MAX", SKILL_UP_BASE + i, 1);
+            } else {
+                button(c, g, left + colW - 180 * u, ry + 66 * u, 150 * u, 38 * u,
+                        lvl >= Catalog.MAX_SKILL_LEVEL ? "MAX" : "+1  (" + cost + "g)", SKILL_UP_BASE + i, can ? 1 : 3);
+            }
         }
 
         float rx = left + colW + 30 * u;
@@ -1184,6 +1497,7 @@ public class Screens {
         else if (game.inputPurpose == Game.INPUT_IP) okLabel = "Gabung";
         else if (game.inputPurpose == Game.INPUT_USERNAME) okLabel = "Pakai";
         else if (game.inputPurpose == Game.INPUT_PASSWORD) okLabel = "Pakai";
+        else if (game.inputPurpose == Game.INPUT_OWNER_PASSWORD) okLabel = "Buka";
         else if (game.inputPurpose == Game.INPUT_ROOM_CODE) okLabel = "Gabung";
         button(c, g, sx + clearW + cancelW + 2 * gap, by, okW, 46 * u,
                 okLabel, INPUT_OK, 1);

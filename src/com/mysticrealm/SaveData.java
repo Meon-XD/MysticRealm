@@ -8,6 +8,7 @@ import com.mysticrealm.Catalog.Item;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -43,6 +44,7 @@ public class SaveData {
     public float sensitivity = 1f;
     public float buttonScale = 1f;
     public boolean highQuality = true;
+    public boolean ownerMode;
 
     private final SharedPreferences prefs;
 
@@ -50,6 +52,38 @@ public class SaveData {
         prefs = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         for (int i = 0; i < equipped.length; i++) equipped[i] = -1;
         load();
+    }
+
+    private static final String OWNER_PASSWORD_HASH = "579ccbe7ba194f3d15a35f7dc04d146a83aa16b6db99a96ae2bce9929fc7c445";
+
+    public static boolean isOwnerName(String name) {
+        if (name == null) return false;
+        return name.trim().equalsIgnoreCase("meon_xd");
+    }
+
+    public static boolean verifyOwnerPassword(String value) {
+        if (value == null) return false;
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(("MysticRealmOwner:" + value).getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : digest) sb.append(String.format("%02x", b & 0xff));
+            return OWNER_PASSWORD_HASH.equals(sb.toString());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isOwner() {
+        return ownerMode;
+    }
+
+    public void applyOwnerBoosts() {
+        if (!isOwner()) return;
+        ownerMode = true;
+        if (gold < 999999) gold = 999999;
+        if (shards < 999) shards = 999;
+        if (points < 99) points = 99;
     }
 
     public Item item(String id) {
@@ -213,6 +247,7 @@ public class SaveData {
         equip(Catalog.SLOT_WEAPON, c.startWeapon);
         equip(Catalog.SLOT_ARMOR, "cloth_robe");
         equip(Catalog.SLOT_BOOTS, "worn_boots");
+        if (isOwner()) applyOwnerBoosts();
     }
 
     public int worldsCleared() {
@@ -241,6 +276,7 @@ public class SaveData {
             JSONObject o = new JSONObject(raw);
             hasCharacter = o.optBoolean("has", false);
             playerName = cleanPlayerName(o.optString("playerName", "Pemain"));
+            ownerMode = false;
             classIndex = o.optInt("class", 0);
             level = o.optInt("level", 1);
             exp = o.optInt("exp", 0);
