@@ -5,7 +5,12 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.view.KeyEvent;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 
@@ -15,12 +20,14 @@ public class Gameplay {
         float x, y, dir, speed, dmg, critChance, radius, life, maxLife;
         int color, kind;
         boolean poison, enemy;
+        String targetUid;
     }
 
     static class Blast {
         float x, y, r, delay, maxDelay, dmg, critChance, stun, slow;
         int color;
         boolean enemy;
+        String targetUid;
     }
 
     static class Ring {
@@ -118,6 +125,19 @@ public class Gameplay {
     public float mouseAimT;
     public float aimX, aimY;
 
+    private int nextNetId = 1;
+    private float enemySendT;
+    private float respawnT;
+    private boolean awaitingRespawn;
+    private final HashMap<String, RemoteTarget> remoteTargets = new HashMap<>();
+    private final Enemy.Target localTarget = new Enemy.Target() {
+        public float x() { return player.x; }
+        public float y() { return player.y; }
+        public float radius() { return player.radius; }
+        public String uid() { return null; }
+        public void hurt(float amount, Enemy src) { player.damage(amount, src); }
+    };
+
     private Random rnd = new Random();
     private int joyPointer = -1;
     private float joyBaseX, joyBaseY, joyDX, joyDY, joyR;
@@ -128,8 +148,14 @@ public class Gameplay {
     private final RectF arcRect = new RectF();
 
     public Gameplay(SaveData save, Audio audio, int stageIndex) {
+        this(save, audio, stageIndex, null, false);
+    }
+
+    public Gameplay(SaveData save, Audio audio, int stageIndex, LanCoop lan, boolean lanHost) {
         this.save = save;
         this.audio = audio;
+        this.lan = lan;
+        this.lanHost = lanHost;
         this.stageIndex = Math.max(0, Math.min(24, stageIndex));
         this.stage = this.stageIndex + 1;
         this.diff = Math.max(0, Math.min(4, save.difficulty));
@@ -143,7 +169,11 @@ public class Gameplay {
         this.camY = player.y;
         this.rnd = new Random(world.seed * 31L + 77L);
         save.currentStage = this.stageIndex;
-        spawnEnemies();
+        if (lan == null || !lan.connected || lanHost) spawnEnemies();
+    }
+
+    public boolean coop() {
+        return lan != null && lan.connected;
     }
 
     public float ui() {
@@ -176,6 +206,7 @@ public class Gameplay {
             float[] pos = world.randomFreePos(rnd, world.spawnX, world.spawnY, 470);
             boolean elite = md.type >= 2 && rnd.nextFloat() < (0.08f + world.theme * 0.035f + world.stageNum * 0.01f);
             Enemy e = new Enemy(this, md, pos[0], pos[1], em, em, elite, world.theme);
+            e.netId = nextNetId++;
             enemies.add(e);
         }
     }
@@ -192,6 +223,7 @@ public class Gameplay {
             y = pos[1];
         }
         boss = new Enemy(this, bd, x, y, world.theme, Catalog.DIFF_ENEMY[diff], 1f);
+        boss.netId = nextNetId++;
         enemies.add(boss);
         audio.play("boss");
         shake(14);
@@ -211,6 +243,7 @@ public class Gameplay {
             x = Gfx.clamp(x, 90, world.w - 90);
             y = Gfx.clamp(y, 90, world.h - 90);
             Enemy e = new Enemy(this, md, x, y, em * 0.9f, em, false, world.theme);
+            e.netId = nextNetId++;
             enemies.add(e);
             fxRing(x, y, 60, 0xFFFF5555, 0.4f);
         }
@@ -234,6 +267,7 @@ public class Gameplay {
             px = Gfx.clamp(px, 70, world.w - 70);
             py = Gfx.clamp(py, 70, world.h - 70);
             Enemy e = new Enemy(this, md, px, py, em * 0.7f, em * 0.85f, false, world.theme);
+            e.netId = nextNetId++;
             enemies.add(e);
         }
     }
@@ -251,7 +285,28 @@ public class Gameplay {
         if (mouseAimT > 0) mouseAimT = Math.max(0, mouseAimT - dt);
         if (lanSendT > 0) lanSendT -= dt;
 
-        if (pauseRequested || player.dead) return;
+        if (pauseRequested) return;
+
+        if (coop()) {
+            if (lanHost) {
+                enemySendT -= dt;
+                if (enemySendT <= 0f) {
+                    sendEnemySnapshot();
+                    enemySendT = 0.1f;
+                }
+            } else {
+                applyEnemySnapshot();
+            }
+            processEnemyHits();
+            processPlayerHits();
+            processCoopEvents();
+        }
+
+        if (player.dead) {
+            if (!coop()) return;
+            respawnT -= dt;
+            if (respawnT <= 0f) respawnPlayer();
+        }
 
         if (puzzleOpen) {
             if (puzzle != null) {
@@ -259,20 +314,23 @@ public class Gameplay {
                 if (puzzle.isClosing()) closePuzzle();
             }
         } else {
-            float jx = joyX() + keyX();
-            float jy = joyY() + keyY();
-            float jm = (float) Math.sqrt(jx * jx + jy * jy);
-            if (jm > 1f) {
-                jx /= jm;
-                jy /= jm;
+            if (!player.dead) {
+                float jx = joyX() + keyX();
+                float jy = joyY() + keyY();
+                float jm = (float) Math.sqrt(jx * jx + jy * jy);
+                if (jm > 1f) {
+                    jx /= jm;
+                    jy /= jm;
+                }
+                player.update(dt, jx, jy);
+                if (mouseAimT > 0) {
+                    player.dir = (float) Math.atan2(aimY - player.y, aimX - player.x);
+                }
             }
-            player.update(dt, jx, jy);
-            if (mouseAimT > 0) {
-                player.dir = (float) Math.atan2(aimY - player.y, aimX - player.x);
-            }
+            boolean authority = lan == null || !lan.connected || lanHost;
             for (int i = 0; i < enemies.size(); i++) {
                 Enemy e = enemies.get(i);
-                e.update(dt, player);
+                e.update(dt, authority ? targetFor(e) : null);
             }
             for (int i = enemies.size() - 1; i >= 0; i--) {
                 Enemy e = enemies.get(i);
@@ -280,19 +338,383 @@ public class Gameplay {
             }
             updateProjectiles(dt);
             updatePickups(dt);
-            if (lan != null && lan.connected && lanSendT <= 0) {
-                lan.sendState(player);
-                lanSendT = 0.07f;
-            }
+        }
+
+        if (coop() && lanSendT <= 0f) {
+            lan.sendState(player);
+            lanSendT = 0.07f;
         }
 
         updateBlasts(dt);
-        updateWorldTriggers(dt);
+        if (!player.dead) updateWorldTriggers(dt);
         updateCamera(dt);
 
         if (clearQueued) {
             clearTimer -= dt;
             if (clearTimer <= 0f) finishStage(true);
+        }
+    }
+
+    // ------------------------------------------------------------- co-op
+
+    private void sendEnemySnapshot() {
+        if (lan == null || !lan.connected || !lanHost) return;
+        try {
+            JSONObject root = new JSONObject();
+            JSONArray es = new JSONArray();
+            for (int i = 0; i < enemies.size(); i++) {
+                Enemy e = enemies.get(i);
+                JSONArray o = new JSONArray();
+                o.put(e.netId);
+                o.put(e.x);
+                o.put(e.y);
+                o.put(e.dir);
+                o.put(e.hp);
+                o.put(e.maxHp);
+                o.put(e.atk);
+                o.put(e.def);
+                o.put(e.spd);
+                o.put(e.radius);
+                o.put(e.scale);
+                o.put(e.type);
+                o.put(e.color);
+                o.put(e.boss ? 1 : 0);
+                o.put(e.elite ? 1 : 0);
+                o.put(e.ranged ? 1 : 0);
+                o.put(e.dead ? 1 : 0);
+                o.put(e.spawnT);
+                o.put(e.deathT);
+                o.put(e.enraged ? 1 : 0);
+                o.put(e.phase);
+                o.put(e.name == null ? "" : e.name);
+                o.put(e.exp);
+                o.put(e.gold);
+                o.put(e.world);
+                o.put(e.bossIndex);
+                es.put(o);
+            }
+            JSONArray ps = new JSONArray();
+            for (int i = 0; i < projectiles.size(); i++) {
+                Proj p = projectiles.get(i);
+                if (!p.enemy) continue;
+                JSONArray o = new JSONArray();
+                o.put(p.x);
+                o.put(p.y);
+                o.put(p.dir);
+                o.put(p.speed);
+                o.put(p.dmg);
+                o.put(p.color);
+                o.put(p.radius);
+                o.put(p.kind);
+                o.put(p.life);
+                ps.put(o);
+            }
+            JSONArray bs = new JSONArray();
+            for (int i = 0; i < blasts.size(); i++) {
+                Blast b = blasts.get(i);
+                if (!b.enemy) continue;
+                JSONArray o = new JSONArray();
+                o.put(b.x);
+                o.put(b.y);
+                o.put(b.r);
+                o.put(b.delay);
+                o.put(b.dmg);
+                o.put(b.color);
+                bs.put(o);
+            }
+            root.put("e", es);
+            root.put("p", ps);
+            root.put("b", bs);
+            lan.sendEnemySnapshot(root.toString());
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void applyEnemySnapshot() {
+        if (lan == null) return;
+        String raw = lan.takeEnemySnapshot();
+        if (raw == null || raw.length() == 0) return;
+        try {
+            JSONObject root = new JSONObject(raw);
+            JSONArray es = root.optJSONArray("e");
+            HashSet<Integer> seen = new HashSet<>();
+            if (es != null) {
+                for (int i = 0; i < es.length(); i++) {
+                    JSONArray o = es.optJSONArray(i);
+                    if (o == null) continue;
+                    int id = o.optInt(0, 0);
+                    if (id == 0) continue;
+                    Enemy e = findEnemy(id);
+                    boolean fresh = e == null;
+                    if (fresh) {
+                        e = new Enemy(this);
+                        e.netId = id;
+                        enemies.add(e);
+                    }
+                    e.remote = true;
+                    boolean wasDead = e.dead;
+                    e.x = (float) o.optDouble(1, e.x);
+                    e.y = (float) o.optDouble(2, e.y);
+                    e.dir = (float) o.optDouble(3, e.dir);
+                    e.hp = (float) o.optDouble(4, e.hp);
+                    e.maxHp = (float) o.optDouble(5, e.maxHp);
+                    e.atk = (float) o.optDouble(6, e.atk);
+                    e.def = (float) o.optDouble(7, e.def);
+                    e.spd = (float) o.optDouble(8, e.spd);
+                    e.radius = (float) o.optDouble(9, e.radius);
+                    e.scale = (float) o.optDouble(10, e.scale);
+                    e.type = o.optInt(11, e.type);
+                    e.color = o.optInt(12, e.color);
+                    e.boss = o.optInt(13, e.boss ? 1 : 0) != 0;
+                    e.elite = o.optInt(14, e.elite ? 1 : 0) != 0;
+                    e.ranged = o.optInt(15, e.ranged ? 1 : 0) != 0;
+                    e.dead = o.optInt(16, e.dead ? 1 : 0) != 0;
+                    e.spawnT = (float) o.optDouble(17, e.spawnT);
+                    e.deathT = (float) o.optDouble(18, e.deathT);
+                    e.enraged = o.optInt(19, e.enraged ? 1 : 0) != 0;
+                    e.phase = o.optInt(20, e.phase);
+                    e.name = o.optString(21, e.name);
+                    e.exp = (float) o.optDouble(22, e.exp);
+                    e.gold = (float) o.optDouble(23, e.gold);
+                    e.world = o.optInt(24, e.world);
+                    e.bossIndex = o.optInt(25, e.bossIndex);
+                    if (e.boss) {
+                        boss = e;
+                        bossSpawned = true;
+                        puzzleResolved = true;
+                    }
+                    if (e.dead && !wasDead) {
+                        e.deathT = 0f;
+                        onEnemyKilled(e);
+                    }
+                    seen.add(id);
+                }
+            }
+            if (es != null) {
+                for (int i = enemies.size() - 1; i >= 0; i--) {
+                    Enemy e = enemies.get(i);
+                    if (!seen.contains(e.netId)) {
+                        if (boss == e) boss = null;
+                        enemies.remove(i);
+                    }
+                }
+            }
+            for (int i = projectiles.size() - 1; i >= 0; i--) {
+                if (projectiles.get(i).enemy) projectiles.remove(i);
+            }
+            JSONArray ps = root.optJSONArray("p");
+            if (ps != null) {
+                for (int i = 0; i < ps.length(); i++) {
+                    JSONArray o = ps.optJSONArray(i);
+                    if (o == null) continue;
+                    Proj p = new Proj();
+                    p.enemy = true;
+                    p.x = (float) o.optDouble(0, 0);
+                    p.y = (float) o.optDouble(1, 0);
+                    p.dir = (float) o.optDouble(2, 0);
+                    p.speed = (float) o.optDouble(3, 0);
+                    p.dmg = (float) o.optDouble(4, 0);
+                    p.color = o.optInt(5, 0);
+                    p.radius = (float) o.optDouble(6, 0);
+                    p.kind = o.optInt(7, 0);
+                    p.life = (float) o.optDouble(8, 4f);
+                    p.maxLife = p.life;
+                    projectiles.add(p);
+                }
+            }
+            for (int i = blasts.size() - 1; i >= 0; i--) {
+                if (blasts.get(i).enemy) blasts.remove(i);
+            }
+            JSONArray bs = root.optJSONArray("b");
+            if (bs != null) {
+                for (int i = 0; i < bs.length(); i++) {
+                    JSONArray o = bs.optJSONArray(i);
+                    if (o == null) continue;
+                    Blast b = new Blast();
+                    b.enemy = true;
+                    b.x = (float) o.optDouble(0, 0);
+                    b.y = (float) o.optDouble(1, 0);
+                    b.r = (float) o.optDouble(2, 0);
+                    b.delay = (float) o.optDouble(3, 0);
+                    b.maxDelay = b.delay;
+                    b.dmg = (float) o.optDouble(4, 0);
+                    b.color = o.optInt(5, 0);
+                    blasts.add(b);
+                }
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
+    private void processEnemyHits() {
+        if (lan == null || !lanHost) return;
+        String raw;
+        while ((raw = lan.takeEnemyHit()) != null) {
+            String[] p = raw.split("\\|");
+            if (p.length < 9) continue;
+            Enemy e = findEnemy(pi(p[0], 0));
+            if (e == null || e.dead) continue;
+            float dmg = pf(p[1], 0);
+            float crit = pf(p[2], 0);
+            float kbx = pf(p[3], 0);
+            float kby = pf(p[4], 0);
+            boolean poison = "1".equals(p[5]);
+            float dot = pf(p[6], 0);
+            float stun = pf(p[7], 0);
+            float slow = pf(p[8], 0);
+            if (dmg > 0f) e.damage(dmg, crit, kbx, kby, poison, dot);
+            if (stun > 0f) e.applyStun(stun);
+            if (slow > 0f) e.applySlow(slow);
+        }
+    }
+
+    private void processPlayerHits() {
+        if (lan == null) return;
+        String raw;
+        while ((raw = lan.takePlayerHit()) != null) {
+            String[] p = raw.split("\\|");
+            if (p.length < 4) continue;
+            String target = p[0];
+            if (target.length() > 0 && !target.equals(lan.selfId())) continue;
+            float dmg = pf(p[1], 0);
+            if (dmg > 0f) player.damage(dmg, null);
+        }
+    }
+
+    private void processCoopEvents() {
+        if (lan == null) return;
+        String ev = lan.takePuzzleEvent();
+        if (ev != null && ev.length() > 0 && lanHost) {
+            if ("solved".equals(ev)) {
+                puzzleResolved = true;
+                if (world.stageNum == 4) {
+                    spawnBoss();
+                } else {
+                    clearQueued = true;
+                    clearTimer = 1.2f;
+                }
+            } else if ("failed".equals(ev)) {
+                spawnPenalty();
+                puzzleCooldown = 2.2f;
+            }
+        }
+        if (lan.takeStageClear() && !finished) finishStage(true);
+    }
+
+    private Enemy.Target targetFor(Enemy e) {
+        Enemy.Target best = null;
+        float bestD = Float.MAX_VALUE;
+        if (!player.dead) {
+            best = localTarget;
+            bestD = (float) Gfx.dist(e.x, e.y, player.x, player.y);
+        }
+        if (lan != null && lan.connected) {
+            List<LanCoop.Remote> rs = lan.remotes();
+            for (int i = 0; i < rs.size(); i++) {
+                LanCoop.Remote r = rs.get(i);
+                if (r.self || r.stage != stageIndex || r.hp <= 0f) continue;
+                RemoteTarget rt = remoteTarget(r);
+                float d = (float) Gfx.dist(e.x, e.y, rt.x, rt.y);
+                if (d < bestD) {
+                    bestD = d;
+                    best = rt;
+                }
+            }
+        }
+        return best == null ? localTarget : best;
+    }
+
+    private RemoteTarget remoteTarget(LanCoop.Remote r) {
+        RemoteTarget t = remoteTargets.get(r.id);
+        if (t == null) {
+            t = new RemoteTarget(r.id);
+            remoteTargets.put(r.id, t);
+        }
+        t.x = r.x;
+        t.y = r.y;
+        return t;
+    }
+
+    private class RemoteTarget implements Enemy.Target {
+        final String uid;
+        float x, y;
+        final float radius = 22f;
+
+        RemoteTarget(String uid) {
+            this.uid = uid;
+        }
+
+        public float x() { return x; }
+        public float y() { return y; }
+        public float radius() { return radius; }
+        public String uid() { return uid; }
+
+        public void hurt(float amount, Enemy src) {
+            if (lan != null) {
+                lan.sendPlayerDamage(uid, amount, src == null ? x : src.x, src == null ? y : src.y);
+            }
+        }
+    }
+
+    private LanCoop.Remote findRemote(String uid) {
+        if (lan == null || uid == null) return null;
+        List<LanCoop.Remote> rs = lan.remotes();
+        for (int i = 0; i < rs.size(); i++) {
+            if (uid.equals(rs.get(i).id)) return rs.get(i);
+        }
+        return null;
+    }
+
+    private Enemy findEnemy(int id) {
+        for (int i = 0; i < enemies.size(); i++) {
+            if (enemies.get(i).netId == id) return enemies.get(i);
+        }
+        return null;
+    }
+
+    private void hitEnemy(Enemy e, float dmg, float crit, float kbx, float kby,
+                          boolean poison, float dot, float stun, float slow, int color) {
+        if (e == null || e.dead) return;
+        if (coop() && !lanHost) {
+            lan.sendEnemyHit(e.netId, dmg, crit, kbx, kby, poison, dot, stun, slow);
+            fxHit(e.x, e.y - e.radius * 0.3f, color);
+        } else {
+            if (dmg > 0f) e.damage(dmg, crit, kbx, kby, poison, dot);
+            if (stun > 0f) e.applyStun(stun);
+            if (slow > 0f) e.applySlow(slow);
+            fxHit(e.x, e.y - e.radius * 0.3f, color);
+        }
+    }
+
+    private void respawnPlayer() {
+        if (!player.dead) {
+            awaitingRespawn = false;
+            respawnT = 0f;
+            return;
+        }
+        player.spawn(world.spawnX, world.spawnY);
+        player.hp = Math.max(1f, player.maxHp * 0.5f);
+        player.invuln = 2f;
+        awaitingRespawn = false;
+        respawnT = 0f;
+        fxRing(player.x, player.y, 180, Gfx.CYAN, 0.7f);
+        audio.play("heal");
+        toast("Respawn!");
+    }
+
+    private static int pi(String s, int def) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (Exception e) {
+            return def;
+        }
+    }
+
+    private static float pf(String s, float def) {
+        try {
+            return Float.parseFloat(s.trim());
+        } catch (Exception e) {
+            return def;
         }
     }
 
@@ -330,33 +752,54 @@ public class Gameplay {
     }
 
     private void updateProjectiles(float dt) {
+        boolean client = coop() && !lanHost;
         for (int i = projectiles.size() - 1; i >= 0; i--) {
             Proj p = projectiles.get(i);
             p.x += (float) Math.cos(p.dir) * p.speed * dt;
             p.y += (float) Math.sin(p.dir) * p.speed * dt;
             p.life -= dt;
             boolean gone = p.life <= 0;
-            if (!gone && world.collides(p.x, p.y, 3)) {
-                gone = true;
-                fxDust(p.x, p.y, p.color);
-            }
-            if (!gone) {
-                if (p.enemy) {
-                    if (Gfx.dist(p.x, p.y, player.x, player.y) < player.radius + p.radius) {
+            if (p.enemy) {
+                if (client) {
+                    if (gone) projectiles.remove(i);
+                    continue;
+                }
+                if (!gone && world.collides(p.x, p.y, 3)) {
+                    gone = true;
+                    fxDust(p.x, p.y, p.color);
+                }
+                if (!gone) {
+                    if (!player.dead && Gfx.dist(p.x, p.y, player.x, player.y) < player.radius + p.radius) {
                         player.damage(p.dmg, null);
                         fxHit(p.x, p.y, p.color);
                         gone = true;
+                    } else if (lanHost) {
+                        List<LanCoop.Remote> rs = lan.remotes();
+                        for (int j = 0; j < rs.size(); j++) {
+                            LanCoop.Remote r = rs.get(j);
+                            if (r.self || r.stage != stageIndex || r.hp <= 0f) continue;
+                            if (Gfx.dist(p.x, p.y, r.x, r.y) < 22f + p.radius) {
+                                lan.sendPlayerDamage(r.id, p.dmg, p.x, p.y);
+                                fxHit(p.x, p.y, p.color);
+                                gone = true;
+                                break;
+                            }
+                        }
                     }
+                }
+            } else if (!gone) {
+                if (world.collides(p.x, p.y, 3)) {
+                    gone = true;
+                    fxDust(p.x, p.y, p.color);
                 } else {
                     for (int j = 0; j < enemies.size(); j++) {
                         Enemy e = enemies.get(j);
                         if (e.dead) continue;
                         if (Gfx.dist(p.x, p.y, e.x, e.y) < e.radius + p.radius) {
                             float kb = 90f;
-                            e.damage(p.dmg, p.critChance,
+                            hitEnemy(e, p.dmg, p.critChance,
                                     (float) Math.cos(p.dir) * kb, (float) Math.sin(p.dir) * kb,
-                                    p.poison, p.dmg);
-                            fxHit(p.x, p.y, p.color);
+                                    p.poison, p.dmg, 0, 0, p.color);
                             gone = true;
                             break;
                         }
@@ -383,7 +826,7 @@ public class Gameplay {
             p.vy *= (float) Math.pow(0.02f, dt);
             p.x += p.vx * dt;
             p.y += p.vy * dt;
-            if (d < player.radius + 20f) {
+            if (!player.dead && d < player.radius + 20f) {
                 collect(p);
                 pickups.remove(i);
                 continue;
@@ -411,11 +854,26 @@ public class Gameplay {
             b.delay -= dt;
             if (b.delay <= 0f) {
                 if (b.enemy) {
-                    if (Gfx.dist(b.x, b.y, player.x, player.y) < b.r + player.radius) {
-                        player.damage(b.dmg, null);
+                    if (coop() && !lanHost) {
+                        fxExplosion(b.x, b.y, b.r, b.color);
+                        audio.play("hit", 0.6f);
+                    } else {
+                        if (!player.dead && Gfx.dist(b.x, b.y, player.x, player.y) < b.r + player.radius) {
+                            player.damage(b.dmg, null);
+                        }
+                        if (lanHost) {
+                            List<LanCoop.Remote> rs = lan.remotes();
+                            for (int j = 0; j < rs.size(); j++) {
+                                LanCoop.Remote r = rs.get(j);
+                                if (r.self || r.stage != stageIndex || r.hp <= 0f) continue;
+                                if (Gfx.dist(b.x, b.y, r.x, r.y) < b.r + 22f) {
+                                    lan.sendPlayerDamage(r.id, b.dmg, b.x, b.y);
+                                }
+                            }
+                        }
+                        fxExplosion(b.x, b.y, b.r, b.color);
+                        audio.play("hit", 0.6f);
                     }
-                    fxExplosion(b.x, b.y, b.r, b.color);
-                    audio.play("hit", 0.6f);
                 } else {
                     areaDamage(b.x, b.y, b.r, b.dmg, b.critChance, b.stun, b.slow, b.color);
                     fxExplosion(b.x, b.y, b.r, b.color);
@@ -476,7 +934,10 @@ public class Gameplay {
             audio.play("puzzle_ok");
             shake(5);
             fxRing(world.shrineX, world.shrineY, 220, Gfx.GOLD, 0.8f);
-            if (world.stageNum == 4) {
+            if (coop() && !lanHost) {
+                lan.sendPuzzleEvent("solved");
+                toast(hint ? "Teka-teki selesai." : "Teka-teki sempurna!");
+            } else if (world.stageNum == 4) {
                 toast("Segel terbuka...");
                 spawnBoss();
             } else {
@@ -488,8 +949,12 @@ public class Gameplay {
             audio.play("puzzle_bad");
             shake(10);
             toast("Teka-teki gagal! Musuh muncul.");
-            spawnPenalty();
-            puzzleCooldown = 2.2f;
+            if (coop() && !lanHost) {
+                lan.sendPuzzleEvent("failed");
+            } else {
+                spawnPenalty();
+                puzzleCooldown = 2.2f;
+            }
         } else {
             toast("Kau meninggalkan altar.");
         }
@@ -532,7 +997,7 @@ public class Gameplay {
     }
 
     public void spawnEnemyProjectile(float x, float y, float angle, float speed, float dmg,
-                                     int color, float radius, int kind) {
+                                     int color, float radius, int kind, String targetUid) {
         Proj p = new Proj();
         p.x = x;
         p.y = y;
@@ -546,6 +1011,7 @@ public class Gameplay {
         p.life = 4.2f;
         p.maxLife = 4.2f;
         p.enemy = true;
+        p.targetUid = targetUid;
         projectiles.add(p);
     }
 
@@ -560,10 +1026,7 @@ public class Gameplay {
             if (Math.abs(angDiff(a, player.dir)) > arc / 2f) continue;
             float kbx = (float) Math.cos(a) * knock;
             float kby = (float) Math.sin(a) * knock;
-            e.damage(dmg, critChance, kbx, kby, false, 0);
-            if (stun > 0) e.applyStun(stun);
-            if (slow > 0) e.applySlow(slow);
-            fxHit(e.x, e.y - e.radius * 0.3f, color);
+            hitEnemy(e, dmg, critChance, kbx, kby, false, 0, stun, slow, color);
         }
     }
 
@@ -574,9 +1037,8 @@ public class Gameplay {
             if (e.dead) continue;
             if (Gfx.dist(x, y, e.x, e.y) > r + e.radius) continue;
             float a = (float) Math.atan2(e.y - y, e.x - x);
-            e.damage(dmg, critChance, (float) Math.cos(a) * 110f, (float) Math.sin(a) * 110f, false, 0);
-            if (stun > 0) e.applyStun(stun);
-            if (slow > 0) e.applySlow(slow);
+            hitEnemy(e, dmg, critChance, (float) Math.cos(a) * 110f, (float) Math.sin(a) * 110f,
+                    false, 0, stun, slow, color);
         }
     }
 
@@ -593,8 +1055,7 @@ public class Gameplay {
             float proj = Gfx.clamp(px * nx + py * ny, 0f, len);
             float cx = x1 + nx * proj, cy = y1 + ny * proj;
             if (Gfx.dist(cx, cy, e.x, e.y) > width + e.radius) continue;
-            e.damage(dmg, critChance, nx * 190f, ny * 190f, false, 0);
-            fxHit(e.x, e.y - e.radius * 0.3f, color);
+            hitEnemy(e, dmg, critChance, nx * 190f, ny * 190f, false, 0, 0, 0, color);
         }
     }
 
@@ -602,7 +1063,10 @@ public class Gameplay {
         for (int i = 0; i < enemies.size(); i++) {
             Enemy e = enemies.get(i);
             if (e.dead) continue;
-            if (Gfx.dist(x, y, e.x, e.y) <= r + e.radius) e.applyStun(dur);
+            if (Gfx.dist(x, y, e.x, e.y) <= r + e.radius) {
+                if (coop() && !lanHost) lan.sendEnemyHit(e.netId, 0, 0, 0, 0, false, 0, dur, 0);
+                else e.applyStun(dur);
+            }
         }
     }
 
@@ -623,7 +1087,7 @@ public class Gameplay {
         blasts.add(b);
     }
 
-    public void spawnEnemyBlast(float x, float y, float r, float delay, float dmg, int color) {
+    public void spawnEnemyBlast(float x, float y, float r, float delay, float dmg, int color, String targetUid) {
         Blast b = new Blast();
         b.x = x;
         b.y = y;
@@ -633,6 +1097,7 @@ public class Gameplay {
         b.dmg = dmg;
         b.color = color;
         b.enemy = true;
+        b.targetUid = targetUid;
         blasts.add(b);
     }
 
@@ -699,11 +1164,19 @@ public class Gameplay {
     }
 
     public void onPlayerDeath() {
+        if (coop()) {
+            if (awaitingRespawn) return;
+            awaitingRespawn = true;
+            respawnT = 3f;
+            toast("Tunggu 3 detik untuk bangkit...");
+            return;
+        }
         finishStage(false);
     }
 
     private void finishStage(boolean win) {
         if (finished) return;
+        if (win && coop() && lanHost && lan != null) lan.sendStageClear();
         finished = true;
         won = win;
         rTime = time;
@@ -1171,6 +1644,23 @@ public class Gameplay {
         } else {
             drawPuzzle(c, g);
         }
+        if (coop() && player.dead) drawRespawnOverlay(c, g);
+    }
+
+    private void drawRespawnOverlay(Canvas c, Gfx g) {
+        float u = ui();
+        float w = Math.min(viewW * 0.82f, 430 * u);
+        float h = 150 * u;
+        float x = (viewW - w) / 2f;
+        float y = (viewH - h) / 2f;
+        g.panel(c, x, y, w, h, 0xE6150F24, 0x886B5A96);
+        g.textShadow(c, "KAU GUGUR", viewW / 2f, y + 36 * u, 28 * u, Gfx.RED, 1, true);
+        int sec = Math.max(0, (int) Math.ceil(respawnT));
+        g.text(c, "Bangkit dalam " + sec, viewW / 2f, y + 72 * u, 18 * u, Gfx.TEXT, 1, true);
+        g.bar(c, x + 42 * u, y + 88 * u, w - 84 * u, 12 * u,
+                Gfx.clamp(1f - respawnT / 3f, 0f, 1f), 0xFF2A1420, Gfx.CYAN);
+        g.text(c, "Partner dapat melanjutkan pertarungan", viewW / 2f, y + 120 * u,
+                12 * u, Gfx.TEXT, 1, false);
     }
 
     private void drawRemoteAlly(Canvas c, Gfx g) {

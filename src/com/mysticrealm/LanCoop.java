@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class LanCoop {
     public static final int PORT = 45877;
@@ -52,6 +53,11 @@ public class LanCoop {
     protected volatile int stageRequest = -1;
     protected volatile int localStage = -1;
     protected volatile long lastStateAt;
+    protected volatile String enemySnapshot;
+    protected volatile boolean stageClearPending;
+    protected final ConcurrentLinkedQueue<String> enemyHits = new ConcurrentLinkedQueue<>();
+    protected final ConcurrentLinkedQueue<String> playerHits = new ConcurrentLinkedQueue<>();
+    protected final ConcurrentLinkedQueue<String> puzzleEvents = new ConcurrentLinkedQueue<>();
 
     public LanCoop(SaveData save) {
         this.save = save;
@@ -84,6 +90,34 @@ public class LanCoop {
             list.add(r);
         }
         return list;
+    }
+
+    public String selfId() {
+        return "lan";
+    }
+
+    public String takeEnemySnapshot() {
+        String s = enemySnapshot;
+        enemySnapshot = null;
+        return s;
+    }
+
+    public String takeEnemyHit() {
+        return enemyHits.poll();
+    }
+
+    public String takePlayerHit() {
+        return playerHits.poll();
+    }
+
+    public String takePuzzleEvent() {
+        return puzzleEvents.poll();
+    }
+
+    public boolean takeStageClear() {
+        boolean b = stageClearPending;
+        stageClearPending = false;
+        return b;
     }
 
     public synchronized int takeStageRequest() {
@@ -213,6 +247,19 @@ public class LanCoop {
             remoteClass = Gfx.clamp(parseInt(p[6], remoteClass), 0, 2);
             remoteMoving = "1".equals(p[7]);
             if (p.length > 8) remoteStage = parseInt(p[8], remoteStage);
+        } else if ("ESNAP".equals(p[0])) {
+            int i = line.indexOf('|');
+            if (i >= 0) enemySnapshot = line.substring(i + 1);
+        } else if ("EHIT".equals(p[0])) {
+            int i = line.indexOf('|');
+            if (i >= 0) enemyHits.add(line.substring(i + 1));
+        } else if ("PHIT".equals(p[0])) {
+            int i = line.indexOf('|');
+            if (i >= 0) playerHits.add(line.substring(i + 1));
+        } else if ("PUZ".equals(p[0]) && p.length > 1) {
+            puzzleEvents.add(p[1]);
+        } else if ("SCLEAR".equals(p[0])) {
+            stageClearPending = true;
         } else if ("BYE".equals(p[0])) {
             connected = false;
             error = "Partner keluar dari permainan.";
@@ -226,6 +273,33 @@ public class LanCoop {
 
     public void setLocalStage(int stage) {
         localStage = stage;
+    }
+
+    public void sendEnemySnapshot(String json) {
+        if (!connected || out == null || json == null) return;
+        send("ESNAP|" + json);
+    }
+
+    public void sendEnemyHit(int netId, float dmg, float crit, float kbx, float kby,
+                             boolean poison, float dot, float stun, float slow) {
+        if (!connected) return;
+        send("EHIT|" + netId + "|" + f(dmg) + "|" + f(crit) + "|" + f(kbx) + "|" + f(kby)
+                + "|" + (poison ? 1 : 0) + "|" + f(dot) + "|" + f(stun) + "|" + f(slow));
+    }
+
+    public void sendPlayerDamage(String target, float dmg, float sx, float sy) {
+        if (!connected) return;
+        send("PHIT|" + (target == null ? "" : target) + "|" + f(dmg) + "|" + f(sx) + "|" + f(sy));
+    }
+
+    public void sendPuzzleEvent(String event) {
+        if (!connected) return;
+        send("PUZ|" + (event == null ? "" : event));
+    }
+
+    public void sendStageClear() {
+        if (!connected) return;
+        send("SCLEAR|1");
     }
 
     public void sendState(Player player) {

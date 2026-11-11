@@ -7,6 +7,8 @@ import java.util.Random;
 
 public class Enemy {
     public final Gameplay gp;
+    public int netId;
+    public boolean remote;
     public String name;
     public int type;
     public int color;
@@ -42,6 +44,18 @@ public class Enemy {
     public float eliteCd;
 
     private final Random rnd = new Random();
+
+    public interface Target {
+        float x();
+        float y();
+        float radius();
+        String uid();
+        void hurt(float amount, Enemy src);
+    }
+
+    public Enemy(Gameplay gp) {
+        this.gp = gp;
+    }
 
     public Enemy(Gameplay gp, Catalog.MonsterDef d, float x, float y, float hpMul, float atkMul,
                  boolean elite, int world) {
@@ -144,12 +158,18 @@ public class Enemy {
         gp.onEnemyKilled(this);
     }
 
-    public void update(float dt, Player p) {
+    public void update(float dt, Target t) {
         time += dt;
         if (dead) {
             deathT += dt;
             return;
         }
+        if (remote) {
+            if (hitFlash > 0) hitFlash -= dt;
+            if (spawnT > 0) spawnT -= dt;
+            return;
+        }
+        if (t == null) return;
         if (spawnT > 0) {
             spawnT -= dt;
             return;
@@ -194,16 +214,16 @@ public class Enemy {
             if (boss) gp.toast(name + " mengamuk!");
         }
 
-        float dx = p.x - x;
-        float dy = p.y - y;
+        float dx = t.x() - x;
+        float dy = t.y() - y;
         float d = (float) Math.sqrt(dx * dx + dy * dy);
 
         if (boss) {
-            updateBoss(dt, p, d, dx, dy);
+            updateBoss(dt, t, d, dx, dy);
         } else if (ranged) {
-            updateRanged(dt, p, d, dx, dy);
+            updateRanged(dt, t, d, dx, dy);
         } else {
-            updateMelee(dt, p, d, dx, dy);
+            updateMelee(dt, t, d, dx, dy);
         }
 
         if (elite && !boss && eliteCd <= 0 && d < 520 && d > 90) {
@@ -218,9 +238,9 @@ public class Enemy {
             float sp = spd * 4.2f * (slow > 0 ? 0.55f : 1f);
             x += (float) Math.cos(dashDir) * sp * dt;
             y += (float) Math.sin(dashDir) * sp * dt;
-            if (!dashHit && d < radius + p.radius + 18) {
+            if (!dashHit && d < radius + t.radius() + 18) {
                 dashHit = true;
-                p.damage(atk * 1.1f, this);
+                t.hurt(atk * 1.1f, this);
             }
         }
 
@@ -244,10 +264,10 @@ public class Enemy {
         }
     }
 
-    private void updateMelee(float dt, Player p, float d, float dx, float dy) {
+    private void updateMelee(float dt, Target t, float d, float dx, float dy) {
         boolean aggro = d < 640 || hitFlash > 0;
         if (aggro) {
-            if (d > radius + p.radius + 6) {
+            if (d > radius + t.radius() + 6) {
                 float sp = spd * 1.9f * (slow > 0 ? 0.5f : 1f) * (enraged ? 1.15f : 1f);
                 dir = (float) Math.atan2(dy, dx);
                 x += dx / d * sp * dt;
@@ -255,7 +275,7 @@ public class Enemy {
             } else if (atkCd <= 0) {
                 atkCd = 1.15f + rnd.nextFloat() * 0.3f;
                 dir = (float) Math.atan2(dy, dx);
-                p.damage(atk * (0.9f + rnd.nextFloat() * 0.25f), this);
+                t.hurt(atk * (0.9f + rnd.nextFloat() * 0.25f), this);
                 gp.fxSlash(x, y, dir, radius + 34, color);
             }
         } else {
@@ -271,7 +291,7 @@ public class Enemy {
         }
     }
 
-    private void updateRanged(float dt, Player p, float d, float dx, float dy) {
+    private void updateRanged(float dt, Target t, float d, float dx, float dy) {
         if (d < 660) {
             float desired = 290f;
             float ang = (float) Math.atan2(dy, dx);
@@ -294,11 +314,11 @@ public class Enemy {
             }
             if (shootCd <= 0 && d < 600) {
                 shootCd = 2.1f + rnd.nextFloat() * 0.8f;
-                float tx = p.x;
-                float ty = p.y;
+                float tx = t.x();
+                float ty = t.y();
                 float sa = (float) Math.atan2(ty - y, tx - x);
                 gp.spawnEnemyProjectile(x + (float) Math.cos(sa) * radius, y + (float) Math.sin(sa) * radius,
-                        sa, 300f, atk * 0.95f, color, 9f, 0);
+                        sa, 300f, atk * 0.95f, color, 9f, 0, t.uid());
                 gp.audio.play("attack", 0.25f);
             }
         } else {
@@ -314,7 +334,7 @@ public class Enemy {
         }
     }
 
-    private void updateBoss(float dt, Player p, float d, float dx, float dy) {
+    private void updateBoss(float dt, Target t, float d, float dx, float dy) {
         if (phase == 1 && hp < maxHp * 0.5f) {
             phase = 2;
             atk *= 1.25f;
@@ -332,9 +352,9 @@ public class Enemy {
                 float sp = spd * 1.6f * (slow > 0 ? 0.5f : 1f);
                 x += dx / d * sp * dt;
                 y += dy / d * sp * dt;
-            } else if (d <= radius + p.radius + 55 && atkCd <= 0) {
+            } else if (d <= radius + t.radius() + 55 && atkCd <= 0) {
                 atkCd = 1.3f;
-                p.damage(atk * 1.05f, this);
+                t.hurt(atk * 1.05f, this);
                 gp.fxSlash(x, y, ang, radius + 70, color);
             }
         }
@@ -347,7 +367,7 @@ public class Enemy {
         if (d > 480) ability = rnd.nextBoolean() ? 1 : 2;
         switch (ability) {
             case 0: {
-                gp.spawnEnemyBlast(p.x, p.y, 135, 0.85f, atk * 1.5f, color);
+                gp.spawnEnemyBlast(t.x(), t.y(), 135, 0.85f, atk * 1.5f, color, t.uid());
                 gp.toast(name + " menghantam tanah!");
                 break;
             }
@@ -356,7 +376,7 @@ public class Enemy {
                 float base = rnd.nextFloat() * 6.28f;
                 for (int i = 0; i < count; i++) {
                     float a = base + i * (6.283f / count);
-                    gp.spawnEnemyProjectile(x, y, a, 260f + world * 12, atk * 0.75f, color, 12f, 1);
+                    gp.spawnEnemyProjectile(x, y, a, 260f + world * 12, atk * 0.75f, color, 12f, 1, null);
                 }
                 gp.audio.play("skill", 0.6f);
                 break;

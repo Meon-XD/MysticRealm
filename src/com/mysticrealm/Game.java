@@ -893,12 +893,10 @@ public class Game {
             return;
         }
         if (!lanGame) leaveLan();
-        gp = new Gameplay(save, audio, idx);
+        gp = new Gameplay(save, audio, idx, lanGame ? lan : null, lanGame && lan != null && lan.host);
         gp.viewW = W;
         gp.viewH = H;
         gp.zoom = zoomFor(H);
-        gp.lan = lanGame ? lan : null;
-        gp.lanHost = lanGame && lan != null && lan.host;
         if (lanGame && lan != null) lan.setLocalStage(idx);
         mapWorld = idx / 5;
         if (!lanGame || idx <= save.maxStage) save.currentStage = idx;

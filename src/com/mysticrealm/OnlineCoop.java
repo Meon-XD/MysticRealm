@@ -614,6 +614,82 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
     }
 
     @Override
+    public String selfId() {
+        return userId();
+    }
+
+    @Override
+    public void sendEnemySnapshot(String json) {
+        if (!connected || ws == null || roomId == null || json == null) return;
+        JSONObject data = new JSONObject();
+        try {
+            data.put("userId", userId());
+            data.put("snap", json);
+        } catch (Exception ignored) {
+        }
+        sendBroadcast("esnap", data);
+    }
+
+    @Override
+    public void sendEnemyHit(int netId, float dmg, float crit, float kbx, float kby,
+                             boolean poison, float dot, float stun, float slow) {
+        if (!connected || ws == null || roomId == null) return;
+        JSONObject data = new JSONObject();
+        try {
+            data.put("userId", userId());
+            data.put("id", netId);
+            data.put("dmg", round(dmg));
+            data.put("crit", round(crit));
+            data.put("kbx", round(kbx));
+            data.put("kby", round(kby));
+            data.put("poison", poison);
+            data.put("dot", round(dot));
+            data.put("stun", round(stun));
+            data.put("slow", round(slow));
+        } catch (Exception ignored) {
+        }
+        sendBroadcast("ehit", data);
+    }
+
+    @Override
+    public void sendPlayerDamage(String target, float dmg, float sx, float sy) {
+        if (!connected || ws == null || roomId == null) return;
+        JSONObject data = new JSONObject();
+        try {
+            data.put("userId", userId());
+            data.put("target", target == null ? "" : target);
+            data.put("dmg", round(dmg));
+            data.put("x", round(sx));
+            data.put("y", round(sy));
+        } catch (Exception ignored) {
+        }
+        sendBroadcast("phit", data);
+    }
+
+    @Override
+    public void sendPuzzleEvent(String event) {
+        if (!connected || ws == null || roomId == null) return;
+        JSONObject data = new JSONObject();
+        try {
+            data.put("userId", userId());
+            data.put("event", event == null ? "" : event);
+        } catch (Exception ignored) {
+        }
+        sendBroadcast("puz", data);
+    }
+
+    @Override
+    public void sendStageClear() {
+        if (!connected || ws == null || roomId == null) return;
+        JSONObject data = new JSONObject();
+        try {
+            data.put("userId", userId());
+        } catch (Exception ignored) {
+        }
+        sendBroadcast("sclear", data);
+    }
+
+    @Override
     public void sendStage(int stage) {
         localStage = Gfx.clamp(stage, 0, 24);
         updateSelf();
@@ -738,6 +814,27 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
             synchronized (this) {
                 stageRequest = stage;
             }
+        } else if ("esnap".equals(event)) {
+            if (uid.length() == 0 || uid.equals(userId())) return;
+            String snap = data.optString("snap", "");
+            if (snap.length() > 0) enemySnapshot = snap;
+        } else if ("ehit".equals(event)) {
+            if (uid.length() == 0 || uid.equals(userId())) return;
+            enemyHits.add(data.optInt("id", 0) + "|" + data.optDouble("dmg", 0) + "|"
+                    + data.optDouble("crit", 0) + "|" + data.optDouble("kbx", 0) + "|"
+                    + data.optDouble("kby", 0) + "|" + (data.optBoolean("poison", false) ? 1 : 0)
+                    + "|" + data.optDouble("dot", 0) + "|" + data.optDouble("stun", 0)
+                    + "|" + data.optDouble("slow", 0));
+        } else if ("phit".equals(event)) {
+            if (uid.length() == 0 || uid.equals(userId())) return;
+            playerHits.add(data.optString("target", "") + "|" + data.optDouble("dmg", 0)
+                    + "|" + data.optDouble("x", 0) + "|" + data.optDouble("y", 0));
+        } else if ("puz".equals(event)) {
+            if (uid.length() == 0 || uid.equals(userId())) return;
+            puzzleEvents.add(data.optString("event", ""));
+        } else if ("sclear".equals(event)) {
+            if (uid.length() == 0 || uid.equals(userId())) return;
+            stageClearPending = true;
         } else if ("leave".equals(event)) {
             if (uid.length() == 0 || uid.equals(userId())) return;
             members.remove(uid);
