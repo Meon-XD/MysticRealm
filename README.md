@@ -41,6 +41,7 @@ Atau buka file APK dari pengelola berkas Android.
 
 - Joystick kiri bawah: bergerak.
 - Tombol kanan bawah: serang, skill 1-3, dash, ramuan, jeda.
+- Serangan dan skill otomatis membidik musuh terdekat; bidikan mouse tetap diprioritaskan.
 - Sentuh menu/panel untuk memilih.
 - Dari peta dunia tersedia tombol Inventaris, Toko, dan Skill.
 - Tombol kembali Android: kembali satu layar; dari menu utama keluar aplikasi.

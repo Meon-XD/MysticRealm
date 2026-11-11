@@ -949,7 +949,6 @@ public class Gameplay {
         }
         float ax = attackX(u), ay = attackY(u), ar = attackR(u);
         if (Gfx.dist(x, y, ax, ay) < ar) {
-            mouseMoved(x, y);
             player.tryAttack();
             return;
         }

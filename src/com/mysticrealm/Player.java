@@ -154,13 +154,7 @@ public class Player {
         int cls = save.classIndex;
         attackCd = cls == 2 ? 0.27f : (cls == 1 ? 0.46f : 0.38f);
         attackAnim = 0.2f;
-        float mag = 0;
-        if (gp.joyActive()) {
-            float jx = gp.joyX();
-            float jy = gp.joyY();
-            mag = (float) Math.sqrt(jx * jx + jy * jy);
-        }
-        if (mag < 0.15f && !gp.mouseAimActive()) faceNearest();
+        if (!gp.mouseAimActive()) faceNearest();
 
         if (cls == 1) {
             float dmg = atk * 1.05f;
@@ -191,6 +185,7 @@ public class Player {
             gp.audio.play("deny");
             return false;
         }
+        if (!gp.mouseAimActive()) faceNearest();
         int lvl = save.skillLv[i];
         float mult = s.power * (1f + 0.16f * lvl);
         float cc = Math.min(0.9f, crit / 100f + 0.03f * lvl);
