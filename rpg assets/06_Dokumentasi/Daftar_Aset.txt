@@ -1,0 +1,16 @@
+JOYFULL RPG — DAFTAR KONTEN KONSEP
+
+KARAKTER:
+Warrior, Mage, Assassin, Archer, Knight, Priest, Rogue, Hunter, Necromancer, Alchemist, Merchant, Bard, Engineer, Shaman, Ninja, Thief, Druid, Ranger, Paladin, Summoner, Guardian, Dragon Knight, Dancer, Beast Tamer, Gunslinger, Monk, Samurai, Lancer, Pirate, Tinkerer.
+
+MONSTER & BOSS:
+Slime elemental, bat, wolf, goblin, orc, skeleton, zombie, spider, scorpion, bandit, golem, mimic, mushroom monster, plant monster, ghost, wraith, demon, wyvern, dragon, undead knight, elemental, sea monster, ancient guardian, dungeon boss.
+
+AREA:
+Desa, kota, hutan, hutan terkutuk, padang rumput, pantai, pulau tropis, gurun, oasis, gunung salju, gua kristal, tambang, reruntuhan, kuil, dungeon, kastil, rawa, gunung berapi, neraka, dimensi astral, pulau langit, sarang naga.
+
+DEKORASI:
+Pohon, semak, bunga, batu, jamur, pagar, jalan, jembatan, lampu, obor, peti, tong, meja, kursi, kios, rumah, menara, patung, altar, portal, kristal, air mancur, gerbang, gerobak, tenda, penanda jalan.
+
+UI & EFEK:
+Bar HP/MP, ikon skill, ikon item, potion, koin, efek sihir, api, es, petir, portal, aura, dan efek cuaca.

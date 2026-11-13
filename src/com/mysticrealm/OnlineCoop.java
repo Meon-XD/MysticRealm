@@ -26,6 +26,14 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
     public volatile List<FriendRow> requests = new ArrayList<>();
     public volatile InviteRow pendingInvite;
     public volatile String selectedFriendId = "";
+    public volatile boolean ownerVerified;
+    public volatile boolean banned;
+    public volatile String banReason = "";
+    public volatile List<PlayerRow> adminResults = new ArrayList<>();
+    public volatile String adminMessage = "";
+    public volatile boolean adminBusy;
+    public volatile String adminQuery = "";
+    public volatile String adminSelectedId = "";
 
     private volatile String inviteJoinCode = "";
     private volatile long lastInvitePoll;
@@ -42,6 +50,9 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
         public int totalGames;
         public int maxStage;
         public boolean verified;
+        public boolean vip;
+        public boolean banned;
+        public int gold;
         public boolean me;
         public int rank;
         public String friendStatus = "none";
@@ -67,7 +78,15 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
 
     public OnlineCoop(SaveData save) {
         super(save);
-        lobbyStage = Gfx.clamp(save.maxStage, 0, 24);
+        lobbyStage = Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1);
+        SupabaseAuth.Session cached = save.loadOnlineSession();
+        if (cached != null) {
+            session = cached;
+            loggedIn = true;
+            username = cached.username == null ? "" : cached.username;
+            if (username.length() > 0) save.playerName = username;
+            restoreSession();
+        }
     }
 
     public SupabaseAuth.Session session() {
@@ -122,10 +141,20 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
 
     public void logout() {
         leaveRoom();
+        save.clearOnlineSession();
         session = null;
         loggedIn = false;
         username = "";
+        ownerVerified = false;
+        banned = false;
+        banReason = "";
+        adminResults = new ArrayList<>();
+        adminMessage = "";
+        adminQuery = "";
+        adminSelectedId = "";
+        adminBusy = false;
         save.ownerMode = false;
+        save.vip = false;
         save.save();
         members.clear();
         leaderboard = new ArrayList<>();
@@ -148,18 +177,67 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
                     if (active == null) return;
                     JSONObject args = new JSONObject();
                     args.put("p_level", Math.max(1, save.level));
-                    args.put("p_max_stage", Gfx.clamp(save.maxStage, 0, 24));
+                    args.put("p_max_stage", Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1));
                     args.put("p_gold", Math.max(0, save.gold));
                     JSONObject profile = SupabaseAuth.rpc("sync_player_profile", args, active.accessToken);
                     if (!loggedIn || session != active) return;
                     boolean verified = profile.optBoolean("verified", false);
+                    boolean isBanned = profile.optBoolean("banned", false);
+                    String reason = profile.optString("ban_reason", "");
+                    long pendingGold = Math.max(0L, profile.optLong("pending_gold", 0L));
+                    int pendingShards = Math.max(0, profile.optInt("pending_shards", 0));
+                    ownerVerified = verified;
                     save.ownerMode = verified;
+                    save.vip = profile.optBoolean("vip", false);
+                    banned = isBanned;
+                    banReason = reason;
                     if (verified) save.applyOwnerBoosts();
+                    if (pendingGold > 0L) {
+                        save.gold = (int) Math.min(999999999L, (long) save.gold + pendingGold);
+                    }
+                    if (pendingShards > 0) {
+                        save.shards = Math.min(999999, save.shards + pendingShards);
+                    }
                     save.save();
+                    if (pendingGold > 0L || pendingShards > 0) {
+                        args.put("p_gold", Math.max(0, save.gold));
+                        SupabaseAuth.rpc("sync_player_profile", args, active.accessToken);
+                        socialMessage = "Menerima hadiah owner.";
+                    }
+                    if (isBanned) {
+                        leaveRoom();
+                        error = bannedMessage();
+                    }
                 } catch (Exception ignored) {
                 }
             }
         }, "online-profile").start();
+    }
+
+    private void restoreSession() {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    SupabaseAuth.Session cached = session;
+                    if (cached == null) return;
+                    if (cached.expiresAt - System.currentTimeMillis() < 60000L) {
+                        SupabaseAuth.Session refreshed = SupabaseAuth.refresh(cached);
+                        if (!loggedIn || session != cached) return;
+                        applySession(refreshed);
+                    } else {
+                        syncProfile();
+                    }
+                } catch (Exception e) {
+                    error = shortError(e);
+                }
+            }
+        }, "online-restore").start();
+    }
+
+    public String bannedMessage() {
+        String reason = banReason == null ? "" : banReason.trim();
+        return reason.length() == 0 ? "Akun ini diblokir oleh owner." : "Akun diblokir: " + reason;
     }
 
     public void fetchLeaderboard() {
@@ -217,6 +295,170 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
                 }
             }
         }, "online-search").start();
+    }
+
+    public void adminSearch(final String query) {
+        if (!loggedIn) {
+            adminMessage = "Login dulu.";
+            return;
+        }
+        if (!ownerVerified) {
+            adminMessage = "Akun ini bukan owner.";
+            return;
+        }
+        if (adminBusy) return;
+        final String q = query == null ? "" : query.trim();
+        adminQuery = q;
+        adminBusy = true;
+        adminMessage = "Mencari...";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    loadAdminRows(q);
+                    adminMessage = adminResults.isEmpty() ? "Pemain tidak ditemukan." : "";
+                } catch (Exception e) {
+                    adminMessage = adminError(e);
+                } finally {
+                    adminBusy = false;
+                }
+            }
+        }, "owner-search").start();
+    }
+
+    private void loadAdminRows(String q) throws Exception {
+        SupabaseAuth.Session active = session;
+        if (active == null) throw new Exception("Login dulu.");
+        JSONObject args = new JSONObject();
+        args.put("p_query", q == null ? "" : q);
+        JSONArray arr = SupabaseAuth.rpcArray("owner_search_players", args, active.accessToken);
+        ArrayList<PlayerRow> rows = new ArrayList<>();
+        for (int i = 0; i < arr.length(); i++) {
+            JSONObject o = arr.optJSONObject(i);
+            if (o != null) rows.add(playerRow(o));
+        }
+        adminResults = rows;
+        if (adminSelectedId.length() > 0) {
+            boolean found = false;
+            for (int i = 0; i < rows.size(); i++) {
+                if (rows.get(i).id.equals(adminSelectedId)) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) adminSelectedId = "";
+        }
+        if (adminSelectedId.length() == 0 && !rows.isEmpty()) {
+            adminSelectedId = rows.get(0).id;
+        }
+    }
+
+    public PlayerRow adminSelected() {
+        for (int i = 0; i < adminResults.size(); i++) {
+            if (adminResults.get(i).id.equals(adminSelectedId)) return adminResults.get(i);
+        }
+        return null;
+    }
+
+    public void adminSetVip(final String id, final boolean enabled) {
+        if (!canAdmin(id)) return;
+        adminBusy = true;
+        adminMessage = "Memproses...";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_user_id", id);
+                    args.put("p_enabled", enabled);
+                    SupabaseAuth.rpc("owner_set_vip", args, session.accessToken);
+                    adminMessage = enabled ? "VIP diberikan." : "VIP dicabut.";
+                    loadAdminRows(adminQuery);
+                } catch (Exception e) {
+                    adminMessage = adminError(e);
+                } finally {
+                    adminBusy = false;
+                }
+            }
+        }, "owner-vip").start();
+    }
+
+    public void adminSetBan(final String id, final boolean bannedNow) {
+        if (!canAdmin(id)) return;
+        adminBusy = true;
+        adminMessage = "Memproses...";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_user_id", id);
+                    args.put("p_banned", bannedNow);
+                    args.put("p_reason", bannedNow ? "Diblokir oleh owner" : "");
+                    SupabaseAuth.rpc("owner_set_ban", args, session.accessToken);
+                    adminMessage = bannedNow ? "Pemain diblokir." : "Blokir dicabut.";
+                    loadAdminRows(adminQuery);
+                } catch (Exception e) {
+                    adminMessage = adminError(e);
+                } finally {
+                    adminBusy = false;
+                }
+            }
+        }, "owner-ban").start();
+    }
+
+    public void adminGrant(final String id, final int gold, final int shards) {
+        if (!canAdmin(id)) return;
+        adminBusy = true;
+        adminMessage = "Memproses...";
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    ensureSession();
+                    JSONObject args = new JSONObject();
+                    args.put("p_user_id", id);
+                    args.put("p_gold", Math.max(0, gold));
+                    args.put("p_shards", Math.max(0, shards));
+                    SupabaseAuth.rpc("owner_grant", args, session.accessToken);
+                    adminMessage = "Hadiah dikirim.";
+                    loadAdminRows(adminQuery);
+                } catch (Exception e) {
+                    adminMessage = adminError(e);
+                } finally {
+                    adminBusy = false;
+                }
+            }
+        }, "owner-grant").start();
+    }
+
+    private boolean canAdmin(String id) {
+        if (!loggedIn) {
+            adminMessage = "Login dulu.";
+            return false;
+        }
+        if (!ownerVerified) {
+            adminMessage = "Akun ini bukan owner.";
+            return false;
+        }
+        if (id == null || id.length() == 0) {
+            adminMessage = "Pilih pemain dulu.";
+            return false;
+        }
+        if (adminBusy) return false;
+        return true;
+    }
+
+    private static String adminError(Exception e) {
+        String msg = shortError(e);
+        if (msg.contains("OWNER_ONLY")) return "Akses owner ditolak server.";
+        if (msg.contains("CANNOT_MODIFY_OWNER")) return "Akun owner tidak bisa diubah.";
+        if (msg.contains("TARGET_NOT_FOUND")) return "Pemain tidak ditemukan.";
+        if (msg.contains("ACCOUNT_BANNED")) return "Akun ini sedang diblokir.";
+        return msg;
     }
 
     public void sendFriendRequest(final String target) {
@@ -412,6 +654,9 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
         r.totalGames = Math.max(0, o.optInt("total_games", 0));
         r.maxStage = Math.max(0, o.optInt("max_stage", 0));
         r.verified = o.optBoolean("verified", false);
+        r.vip = o.optBoolean("vip", false);
+        r.banned = o.optBoolean("banned", false);
+        r.gold = Math.max(0, o.optInt("gold", 0));
         r.me = o.optBoolean("is_me", false);
         r.rank = Math.max(0, o.optInt("rank", 0));
         r.friendStatus = o.optString("friend_status", "none");
@@ -434,6 +679,10 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
             error = "Login dulu.";
             return;
         }
+        if (banned) {
+            error = bannedMessage();
+            return;
+        }
         if (busy) return;
         busy = true;
         error = null;
@@ -453,7 +702,7 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
                     hostId = result.optString("host_id", userId());
                     maxPlayers = Gfx.clamp(limit, 2, 4);
                     host = true;
-                    lobbyStage = Gfx.clamp(save.maxStage, 0, 24);
+                    lobbyStage = Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1);
                     localStage = lobbyStage;
                     if (roomId.length() == 0) throw new Exception("Room gagal dibuat.");
                     ensureSelfMember();
@@ -471,6 +720,10 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
     public void joinRoom(final String code) {
         if (!loggedIn) {
             error = "Login dulu.";
+            return;
+        }
+        if (banned) {
+            error = bannedMessage();
             return;
         }
         if (busy) return;
@@ -495,7 +748,7 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
                     host = "host".equals(result.optString("role", "member"));
                     JSONObject settings = result.optJSONObject("settings");
                     maxPlayers = settings == null ? 4 : Gfx.clamp(settings.optInt("max_players", 4), 2, 4);
-                    lobbyStage = Gfx.clamp(save.maxStage, 0, 24);
+                    lobbyStage = Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1);
                     localStage = lobbyStage;
                     if (roomId.length() == 0) throw new Exception("Gagal masuk room.");
                     ensureSelfMember();
@@ -511,6 +764,10 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
     }
 
     public void startGame(final int stage) {
+        if (banned) {
+            error = bannedMessage();
+            return;
+        }
         if (!host) {
             error = "Hanya host yang bisa memulai.";
             return;
@@ -534,7 +791,7 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
                     JSONObject args = new JSONObject();
                     args.put("p_room_id", roomId);
                     SupabaseAuth.rpc("start_room", args, session.accessToken);
-                    lobbyStage = Gfx.clamp(stage, 0, 24);
+                    lobbyStage = Gfx.clamp(stage, 0, Catalog.STAGE_COUNT - 1);
                     localStage = lobbyStage;
                     stageRequest = lobbyStage;
                     JSONObject data = new JSONObject();
@@ -691,7 +948,7 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
 
     @Override
     public void sendStage(int stage) {
-        localStage = Gfx.clamp(stage, 0, 24);
+        localStage = Gfx.clamp(stage, 0, Catalog.STAGE_COUNT - 1);
         updateSelf();
         JSONObject data = new JSONObject();
         try {
@@ -704,7 +961,7 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
 
     @Override
     public void setLocalStage(int stage) {
-        localStage = Gfx.clamp(stage, 0, 24);
+        localStage = Gfx.clamp(stage, 0, Catalog.STAGE_COUNT - 1);
         updateSelf();
     }
 
@@ -778,7 +1035,7 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
             if (uid.length() == 0 || uid.equals(userId())) return;
             Remote r = member(uid);
             r.name = cleanName(data.optString("name", "Partner"));
-            r.classIndex = Gfx.clamp(data.optInt("class", 0), 0, 2);
+            r.classIndex = Gfx.clamp(data.optInt("class", 0), 0, Catalog.CLASSES.length - 1);
             r.level = Math.max(1, data.optInt("level", 1));
             r.stage = data.optInt("stage", -1);
             r.lastSeen = System.currentTimeMillis();
@@ -792,13 +1049,13 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
             r.dir = (float) data.optDouble("dir", r.dir);
             r.hp = (float) data.optDouble("hp", r.hp);
             r.maxHp = Math.max(1f, (float) data.optDouble("maxHp", r.maxHp));
-            r.classIndex = Gfx.clamp(data.optInt("class", r.classIndex), 0, 2);
+            r.classIndex = Gfx.clamp(data.optInt("class", r.classIndex), 0, Catalog.CLASSES.length - 1);
             r.level = Math.max(1, data.optInt("level", r.level));
             r.moving = data.optBoolean("moving", false);
             r.stage = data.optInt("stage", r.stage);
             r.lastSeen = System.currentTimeMillis();
         } else if ("stage".equals(event)) {
-            int stage = Gfx.clamp(data.optInt("stage", -1), -1, 24);
+            int stage = Gfx.clamp(data.optInt("stage", -1), -1, Catalog.STAGE_COUNT - 1);
             if (stage < 0) return;
             if (uid.length() > 0 && !uid.equals(userId())) member(uid).stage = stage;
             if (!host) {
@@ -809,7 +1066,7 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
             }
         } else if ("start".equals(event)) {
             if (!host && uid.length() > 0 && !uid.equals(hostId)) return;
-            int stage = Gfx.clamp(data.optInt("stage", 0), 0, 24);
+            int stage = Gfx.clamp(data.optInt("stage", 0), 0, Catalog.STAGE_COUNT - 1);
             lobbyStage = stage;
             synchronized (this) {
                 stageRequest = stage;
@@ -927,11 +1184,22 @@ public class OnlineCoop extends LanCoop implements RealtimeClient.Listener {
 
     private void applySession(SupabaseAuth.Session value) {
         session = value;
+        save.saveOnlineSession(value);
         String nextUser = value.username == null ? "" : value.username;
         boolean userChanged = !nextUser.equals(username == null ? "" : username);
         username = nextUser;
         loggedIn = true;
-        if (userChanged) save.ownerMode = false;
+        if (userChanged) {
+            ownerVerified = false;
+            banned = false;
+            banReason = "";
+            save.ownerMode = false;
+            save.vip = false;
+            adminResults = new ArrayList<>();
+            adminMessage = "";
+            adminQuery = "";
+            adminSelectedId = "";
+        }
         if (value.username != null && value.username.length() > 0) {
             save.playerName = value.username;
             save.save();

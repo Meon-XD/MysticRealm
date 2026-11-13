@@ -26,6 +26,7 @@ public class Game {
     public static final int HELP = 15;
     public static final int FRIENDS = 16;
     public static final int LEADERBOARD = 17;
+    public static final int OWNER_PANEL = 18;
 
     public static final int INPUT_NAME = 1;
     public static final int INPUT_IP = 2;
@@ -34,6 +35,7 @@ public class Game {
     public static final int INPUT_ROOM_CODE = 5;
     public static final int INPUT_SEARCH = 6;
     public static final int INPUT_OWNER_PASSWORD = 7;
+    public static final int INPUT_OWNER_SEARCH = 8;
 
     public final Context context;
     public final Gfx gfx = new Gfx();
@@ -59,6 +61,7 @@ public class Game {
     public String selItemId = null;
     public boolean confirmNew = false;
     public String searchQuery = "";
+    public String ownerQuery = "";
     public int helpPage = 0;
 
     public float W = 1920f;
@@ -101,8 +104,8 @@ public class Game {
         screens = new Screens(this);
         online = new OnlineCoop(save);
         selClass = save.classIndex;
-        mapWorld = Gfx.clamp(save.currentStage / 5, 0, 4);
-        if (save.hasCharacter) mapWorld = Gfx.clamp(save.maxStage / 5, 0, 4);
+        mapWorld = Gfx.clamp(save.currentStage / Catalog.STAGES_PER_WORLD, 0, Catalog.WORLD_COUNT - 1);
+        if (save.hasCharacter) mapWorld = Gfx.clamp(save.maxStage / Catalog.STAGES_PER_WORLD, 0, Catalog.WORLD_COUNT - 1);
         mode = LOADING;
         lastMusic = -99;
     }
@@ -185,6 +188,9 @@ public class Game {
             case LEADERBOARD:
                 mode = MENU;
                 return true;
+            case OWNER_PANEL:
+                mode = MENU;
+                return true;
             default:
                 mode = MENU;
                 return true;
@@ -254,7 +260,7 @@ public class Game {
                     leaveLan();
                     gp.lan = null;
                 }
-                if (gp.won && gp.stageIndex == 24) {
+                if (gp.won && gp.stageIndex == Catalog.STAGE_COUNT - 1) {
                     playCinematic("ending");
                     return;
                 }
@@ -399,6 +405,14 @@ public class Game {
             return;
         }
         if (confirmNew && id != Screens.CONFIRM_YES && id != Screens.CONFIRM_NO) return;
+        if (id >= Screens.OWNER_ROW_BASE && id < Screens.OWNER_ROW_BASE + 20) {
+            int idx = id - Screens.OWNER_ROW_BASE;
+            if (online != null && idx < online.adminResults.size()) {
+                online.adminSelectedId = online.adminResults.get(idx).id;
+                audio.play("click");
+            }
+            return;
+        }
         if (id >= Screens.OWNER_SKILL_DOWN_BASE && id < Screens.OWNER_SKILL_DOWN_BASE + 3) {
             ownerSkill(id - Screens.OWNER_SKILL_DOWN_BASE, -1);
             return;
@@ -455,7 +469,7 @@ public class Game {
             return;
         }
         if (id >= Screens.STAGE_BASE && id < Screens.STAGE_BASE + 5) {
-            startStage(mapWorld * 5 + (id - Screens.STAGE_BASE));
+            startStage(mapWorld * Catalog.STAGES_PER_WORLD + (id - Screens.STAGE_BASE));
             return;
         }
         if (id >= Screens.SKILL_UP_BASE && id < Screens.SKILL_UP_BASE + 3) {
@@ -473,7 +487,7 @@ public class Game {
                 audio.play("click");
                 break;
             case Screens.CONTINUE:
-                mapWorld = Gfx.clamp(save.maxStage / 5, 0, 4);
+                mapWorld = Gfx.clamp(save.maxStage / Catalog.STAGES_PER_WORLD, 0, Catalog.WORLD_COUNT - 1);
                 mode = WORLD_MAP;
                 audio.play("click");
                 break;
@@ -602,6 +616,52 @@ public class Game {
                 if (online != null && online.loggedIn) online.fetchLeaderboard();
                 audio.play("click");
                 break;
+            case Screens.MENU_OWNER:
+                if (online == null || !online.ownerVerified) {
+                    notify("Login online sebagai owner untuk membuka panel.");
+                    audio.play("deny");
+                } else {
+                    mode = OWNER_PANEL;
+                    if (online.adminResults.isEmpty()) online.adminSearch(ownerQuery);
+                    audio.play("click");
+                }
+                break;
+            case Screens.OWNER_SEARCH:
+                promptOwnerSearch();
+                audio.play("click");
+                break;
+            case Screens.OWNER_REFRESH:
+                if (online != null) online.adminSearch(ownerQuery);
+                audio.play("click");
+                break;
+            case Screens.OWNER_VIP:
+                if (online != null) {
+                    OnlineCoop.PlayerRow r = online.adminSelected();
+                    if (r != null) online.adminSetVip(r.id, !r.vip);
+                }
+                audio.play("click");
+                break;
+            case Screens.OWNER_BAN:
+                if (online != null) {
+                    OnlineCoop.PlayerRow r = online.adminSelected();
+                    if (r != null) online.adminSetBan(r.id, !r.banned);
+                }
+                audio.play("click");
+                break;
+            case Screens.OWNER_GOLD:
+                if (online != null) {
+                    OnlineCoop.PlayerRow r = online.adminSelected();
+                    if (r != null) online.adminGrant(r.id, 10000, 0);
+                }
+                audio.play("click");
+                break;
+            case Screens.OWNER_DIAMOND:
+                if (online != null) {
+                    OnlineCoop.PlayerRow r = online.adminSelected();
+                    if (r != null) online.adminGrant(r.id, 0, 100);
+                }
+                audio.play("click");
+                break;
             case Screens.MENU_HELP:
                 helpPage = 0;
                 mode = HELP;
@@ -679,11 +739,11 @@ public class Game {
                 audio.play("click");
                 break;
             case Screens.LAN_STAGE_PREV:
-                lanStage = Gfx.clamp(lanStage - 1, 0, 24);
+                lanStage = Gfx.clamp(lanStage - 1, 0, Catalog.STAGE_COUNT - 1);
                 audio.play("click");
                 break;
             case Screens.LAN_STAGE_NEXT:
-                lanStage = Gfx.clamp(lanStage + 1, 0, 24);
+                lanStage = Gfx.clamp(lanStage + 1, 0, Catalog.STAGE_COUNT - 1);
                 audio.play("click");
                 break;
             case Screens.ONLINE_USERNAME:
@@ -710,7 +770,7 @@ public class Game {
                 break;
             case Screens.ONLINE_CREATE:
                 if (online != null) {
-                    onlineStage = Gfx.clamp(save.maxStage, 0, 24);
+                    onlineStage = Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1);
                     online.createRoom(4);
                 }
                 audio.play("click");
@@ -729,12 +789,12 @@ public class Game {
                 audio.play("click");
                 break;
             case Screens.ONLINE_STAGE_PREV:
-                onlineStage = Gfx.clamp(onlineStage - 1, 0, 24);
+                onlineStage = Gfx.clamp(onlineStage - 1, 0, Catalog.STAGE_COUNT - 1);
                 if (online != null && online.host) online.sendStage(onlineStage);
                 audio.play("click");
                 break;
             case Screens.ONLINE_STAGE_NEXT:
-                onlineStage = Gfx.clamp(onlineStage + 1, 0, 24);
+                onlineStage = Gfx.clamp(onlineStage + 1, 0, Catalog.STAGE_COUNT - 1);
                 if (online != null && online.host) online.sendStage(onlineStage);
                 audio.play("click");
                 break;
@@ -829,7 +889,7 @@ public class Game {
             case Screens.RESULT_NEXT:
                 if (gp != null) {
                     int next = gp.stageIndex + 1;
-                    if (next < 25) {
+                    if (next < Catalog.STAGE_COUNT) {
                         startStage(next);
                     } else {
                         gp = null;
@@ -841,7 +901,7 @@ public class Game {
                 if (gp != null) startStage(gp.stageIndex);
                 break;
             case Screens.RESULT_MAP:
-                if (gp != null) mapWorld = Gfx.clamp(gp.stageIndex / 5, 0, 4);
+                if (gp != null) mapWorld = Gfx.clamp(gp.stageIndex / Catalog.STAGES_PER_WORLD, 0, Catalog.WORLD_COUNT - 1);
                 gp = null;
                 mode = WORLD_MAP;
                 save.save();
@@ -886,7 +946,7 @@ public class Game {
     }
 
     private void startStage(int idx, boolean lanGame) {
-        if (idx < 0 || idx >= 25) return;
+        if (idx < 0 || idx >= Catalog.STAGE_COUNT) return;
         if (!lanGame && idx > save.maxStage) {
             audio.play("deny");
             notify("Stage masih terkunci.");
@@ -898,7 +958,7 @@ public class Game {
         gp.viewH = H;
         gp.zoom = zoomFor(H);
         if (lanGame && lan != null) lan.setLocalStage(idx);
-        mapWorld = idx / 5;
+        mapWorld = idx / Catalog.STAGES_PER_WORLD;
         if (!lanGame || idx <= save.maxStage) save.currentStage = idx;
         save.save();
         selItemId = null;
@@ -935,7 +995,7 @@ public class Game {
 
     private void openLanLobby() {
         mode = LAN_LOBBY;
-        lanStage = Gfx.clamp(save.maxStage, 0, 24);
+        lanStage = Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1);
         lanErrorShown = null;
         audio.play("click");
     }
@@ -943,7 +1003,7 @@ public class Game {
     private void openOnlineLobby() {
         if (online == null) online = new OnlineCoop(save);
         mode = ONLINE_LOBBY;
-        onlineStage = Gfx.clamp(save.maxStage, 0, 24);
+        onlineStage = Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1);
         lanErrorShown = null;
         audio.play("click");
     }
@@ -952,7 +1012,7 @@ public class Game {
         leaveLan();
         lan = new LanCoop(save);
         lan.host();
-        lanStage = Gfx.clamp(save.maxStage, 0, 24);
+        lanStage = Gfx.clamp(save.maxStage, 0, Catalog.STAGE_COUNT - 1);
         lanErrorShown = null;
         audio.play("click");
     }
@@ -977,7 +1037,7 @@ public class Game {
             audio.play("deny");
             return;
         }
-        int stage = Gfx.clamp(lanStage, 0, 24);
+        int stage = Gfx.clamp(lanStage, 0, Catalog.STAGE_COUNT - 1);
         lan.sendStage(stage);
         startStage(stage, true);
     }
@@ -1017,6 +1077,11 @@ public class Game {
     private void promptSearch() {
         openTextInput(INPUT_SEARCH, "CARI PEMAIN", "Cari username teman untuk dikirimi permintaan.",
                 searchQuery, "username", 16, false, false);
+    }
+
+    private void promptOwnerSearch() {
+        openTextInput(INPUT_OWNER_SEARCH, "CARI PEMAIN", "Cari username untuk dikelola owner.",
+                ownerQuery, "username", 16, false, false);
     }
 
     private void promptOwnerPassword() {
@@ -1207,6 +1272,10 @@ public class Game {
             searchQuery = value;
             closeTextInput();
             if (online != null) online.searchPlayers(searchQuery);
+        } else if (inputPurpose == INPUT_OWNER_SEARCH) {
+            ownerQuery = value;
+            closeTextInput();
+            if (online != null) online.adminSearch(ownerQuery);
         } else {
             closeTextInput();
         }

@@ -156,7 +156,7 @@ public class Gameplay {
         this.audio = audio;
         this.lan = lan;
         this.lanHost = lanHost;
-        this.stageIndex = Math.max(0, Math.min(24, stageIndex));
+        this.stageIndex = Math.max(0, Math.min(Catalog.STAGE_COUNT - 1, stageIndex));
         this.stage = this.stageIndex + 1;
         this.diff = Math.max(0, Math.min(4, save.difficulty));
         this.world = new World(this.stageIndex);
@@ -1312,7 +1312,7 @@ public class Gameplay {
         world.chestOpen = true;
         audio.play("pickup");
         fxRing(world.chestX, world.chestY, 90, Gfx.GOLD, 0.7f);
-        int cap = Gfx.clamp(1 + stageIndex / 5, 0, 6);
+        int cap = Gfx.clamp(1 + stageIndex / Catalog.STAGES_PER_WORLD, 0, 6);
         Catalog.Item it = Catalog.randomEquipment(rnd, cap, player.luck);
         if (it != null && rnd.nextFloat() < 0.72f) {
             save.addItem(it.id, 1);
@@ -1671,7 +1671,7 @@ public class Gameplay {
             if (r.self || r.stage != stageIndex) continue;
             float rx = r.x, ry = r.y;
             float bob = r.moving ? (float) Math.sin(time * 11f) * 2.2f : 0f;
-            Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(r.classIndex, 0, 2)];
+            Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(r.classIndex, 0, Catalog.CLASSES.length - 1)];
             g.circle(c, rx, ry + 20, 25, 0x44000000);
             c.save();
             c.translate(0, -4f);
@@ -1765,12 +1765,26 @@ public class Gameplay {
             Proj p = projectiles.get(i);
             float r = p.radius * (p.enemy ? 1.1f : 1f);
             int col = p.kind == 2 ? 0xFF7FE08A : p.color;
-            g.circle(c, p.x, p.y, r * 2.1f, Gfx.withAlpha(col, 40));
-            g.circle(c, p.x, p.y, r, col);
-            g.circle(c, p.x - r * 0.3f, p.y - r * 0.3f, r * 0.35f, 0xCCFFFFFF);
-            float tx = p.x - (float) Math.cos(p.dir) * r * 3f;
-            float ty = p.y - (float) Math.sin(p.dir) * r * 3f;
-            g.line(c, p.x, p.y, tx, ty, Gfx.withAlpha(col, 90), r * 1.2f);
+            if (p.kind == 3) {
+                float len = r * 3.4f;
+                float bx = p.x - (float) Math.cos(p.dir) * len;
+                float by = p.y - (float) Math.sin(p.dir) * len;
+                g.line(c, bx, by, p.x, p.y, Gfx.withAlpha(col, 190), 3.2f);
+                g.circle(c, p.x, p.y, r * 0.7f, Gfx.mix(col, 0xFFFFFFFF, 0.4f));
+                g.line(c, p.x, p.y, p.x + (float) Math.cos(p.dir) * r, p.y + (float) Math.sin(p.dir) * r, 0xFFF2E3B0, 2f);
+            } else if (p.kind == 4) {
+                g.circle(c, p.x, p.y, r * 2.4f, Gfx.withAlpha(col, 55));
+                g.circle(c, p.x, p.y, r, Gfx.mix(col, 0xFFFFFFFF, 0.35f));
+                g.line(c, p.x - r * 1.6f, p.y, p.x + r * 1.6f, p.y, Gfx.withAlpha(col, 180), 2f);
+                g.line(c, p.x, p.y - r * 1.6f, p.x, p.y + r * 1.6f, Gfx.withAlpha(col, 180), 2f);
+            } else {
+                g.circle(c, p.x, p.y, r * 2.1f, Gfx.withAlpha(col, 40));
+                g.circle(c, p.x, p.y, r, col);
+                g.circle(c, p.x - r * 0.3f, p.y - r * 0.3f, r * 0.35f, 0xCCFFFFFF);
+                float tx = p.x - (float) Math.cos(p.dir) * r * 3f;
+                float ty = p.y - (float) Math.sin(p.dir) * r * 3f;
+                g.line(c, p.x, p.y, tx, ty, Gfx.withAlpha(col, 90), r * 1.2f);
+            }
         }
     }
 
@@ -1809,6 +1823,16 @@ public class Gameplay {
             g.circle(c, b.x, b.y, rr, Gfx.withAlpha(b.color, (int) (70 * a)));
             g.circle(c, b.x, b.y, rr * 0.6f, Gfx.withAlpha(0xFFFFFFFF, (int) (60 * a)));
             g.circleStroke(c, b.x, b.y, rr, Gfx.withAlpha(b.color, (int) (230 * a)), 5 * a + 1);
+            for (int ray = 0; ray < 8; ray++) {
+                float angle = time * 0.7f + ray * 0.7853982f;
+                float inner = rr * 0.72f;
+                float outer = rr * (1.02f + 0.12f * (float) Math.sin(time * 5f + ray));
+                g.line(c, b.x + (float) Math.cos(angle) * inner,
+                        b.y + (float) Math.sin(angle) * inner,
+                        b.x + (float) Math.cos(angle) * outer,
+                        b.y + (float) Math.sin(angle) * outer,
+                        Gfx.withAlpha(b.color, (int) (150 * a)), 2.5f * a + 0.8f);
+            }
         }
         for (int i = 0; i < hits.size(); i++) {
             HitFx h = hits.get(i);
@@ -1844,7 +1868,7 @@ public class Gameplay {
         // top left status
         float px = 16 * u, py = 14 * u;
         g.panel(c, px, py, 268 * u, 92 * u, 0xCC150F24, 0x556B5A96);
-        Catalog.ClassDef cd = Catalog.CLASSES[save.classIndex];
+        Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(save.classIndex, 0, Catalog.CLASSES.length - 1)];
         g.text(c, cd.name, px + 14 * u, py + 20 * u, 15 * u, cd.color, 0, true);
         g.text(c, "Lv " + save.level, px + 254 * u, py + 20 * u, 14 * u, Gfx.GOLD, 2, true);
         g.bar(c, px + 14 * u, py + 34 * u, 240 * u, 16 * u, player.hp / Math.max(1f, player.maxHp), 0xFF3A1420, Gfx.RED);
@@ -1931,6 +1955,8 @@ public class Gameplay {
         float ax = attackX(u), ay = attackY(u), ar = attackR(u);
         g.circle(c, ax, ay, ar + 5 * u, 0x33000000);
         g.circle(c, ax, ay, ar, player.attackCd > 0 ? 0xCC3A2A4A : 0xEEE0A64B);
+        g.fill(0x30FFFFFF);
+        c.drawOval(ax - ar * 0.62f, ay - ar * 0.72f, ax + ar * 0.62f, ay - ar * 0.08f, g.p);
         g.circleStroke(c, ax, ay, ar, 0xFFFFE8B0, 2.5f * u);
         g.line(c, ax - ar * 0.4f, ay + ar * 0.4f, ax + ar * 0.42f, ay - ar * 0.42f, 0xFF2A1A08, 7 * u);
         g.line(c, ax - ar * 0.12f, ay + ar * 0.05f, ax + ar * 0.18f, ay + ar * 0.35f, 0xFF2A1A08, 5 * u);
@@ -1943,7 +1969,13 @@ public class Gameplay {
             boolean ready = player.cd[i] <= 0 && player.mp >= s.mp;
             g.circle(c, sx, sy, sr + 4 * u, 0x33000000);
             g.circle(c, sx, sy, sr, ready ? 0xEE211A38 : 0xBB1A1428);
+            g.fill(0x25FFFFFF);
+            c.drawOval(sx - sr * 0.62f, sy - sr * 0.72f, sx + sr * 0.62f, sy - sr * 0.08f, g.p);
             g.circleStroke(c, sx, sy, sr, Gfx.withAlpha(s.color, ready ? 230 : 90), 2.2f * u);
+            if (ready) {
+                int pulse = 105 + (int) (35 * (0.5f + 0.5f * (float) Math.sin(time * 3f + i)));
+                g.circleStroke(c, sx, sy, sr + 3 * u, Gfx.withAlpha(s.color, pulse), 1.2f * u);
+            }
             g.text(c, (i + 1) + "", sx, sy - 2 * u, 17 * u, ready ? s.color : Gfx.DIM, 1, true);
             if (player.cd[i] > 0) {
                 g.circle(c, sx, sy, sr, 0x99201018);
@@ -1957,6 +1989,8 @@ public class Gameplay {
         float dx = dodgeX(u), dy = dodgeY(u);
         boolean dodgeReady = player.dodgeCd <= 0;
         g.circle(c, dx, dy, 38 * u, dodgeReady ? 0xDD1C3340 : 0xAA161C28);
+        g.fill(0x24FFFFFF);
+        c.drawOval(dx - 23 * u, dy - 27 * u, dx + 23 * u, dy - 4 * u, g.p);
         g.circleStroke(c, dx, dy, 38 * u, dodgeReady ? Gfx.CYAN : 0x5555AAAA, 2 * u);
         g.line(c, dx - 13 * u, dy + 4 * u, dx + 5 * u, dy - 10 * u, dodgeReady ? Gfx.CYAN : Gfx.DIM, 5 * u);
         g.line(c, dx + 2 * u, dy + 3 * u, dx + 8 * u, dy + 3 * u, dodgeReady ? Gfx.CYAN : Gfx.DIM, 5 * u);
@@ -1967,6 +2001,8 @@ public class Gameplay {
         int potions = save.count("health_potion") + save.count("greater_health") + save.count("elixir")
                 + save.count("mana_potion") + save.count("greater_mana");
         g.circle(c, px, py, 34 * u, potions > 0 ? 0xDD2A1830 : 0xAA1A1424);
+        g.fill(0x24FFFFFF);
+        c.drawOval(px - 20 * u, py - 24 * u, px + 20 * u, py - 4 * u, g.p);
         g.circleStroke(c, px, py, 34 * u, potions > 0 ? 0xFFE0679A : 0x55443344, 2 * u);
         g.roundRect(c, px - 8 * u, py - 14 * u, 16 * u, 28 * u, 6 * u, potions > 0 ? 0xFFE0679A : 0xFF554455);
         g.roundRect(c, px - 4 * u, py - 20 * u, 8 * u, 8 * u, 2 * u, 0xFFD8CBB8);

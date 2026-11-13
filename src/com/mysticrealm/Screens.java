@@ -79,6 +79,7 @@ public class Screens {
     public static final int MENU_FRIENDS = 155;
     public static final int MENU_LEADERBOARD = 156;
     public static final int MENU_HELP = 157;
+    public static final int MENU_OWNER = 158;
     public static final int INVITE_ACCEPT = 160;
     public static final int INVITE_DECLINE = 161;
     public static final int SOCIAL_SEARCH = 162;
@@ -90,6 +91,12 @@ public class Screens {
     public static final int LEADERBOARD_REFRESH = 168;
     public static final int HELP_PREV = 169;
     public static final int HELP_NEXT = 170;
+    public static final int OWNER_SEARCH = 171;
+    public static final int OWNER_REFRESH = 172;
+    public static final int OWNER_VIP = 173;
+    public static final int OWNER_BAN = 174;
+    public static final int OWNER_GOLD = 175;
+    public static final int OWNER_DIAMOND = 176;
     public static final int INPUT_BACKSPACE = 550;
     public static final int INPUT_CLEAR = 551;
     public static final int INPUT_CANCEL = 552;
@@ -104,6 +111,7 @@ public class Screens {
     public static final int ADD_FRIEND_BASE = 960;
     public static final int OWNER_SKILL_DOWN_BASE = 980;
     public static final int OWNER_SKILL_UP_BASE = 990;
+    public static final int OWNER_ROW_BASE = 1000;
 
     static class Btn {
         float x, y, w, h;
@@ -192,7 +200,7 @@ public class Screens {
     private void bg(Canvas c, Gfx g) {
         float w = W(), h = H(), u = u();
         g.gradientRect(c, 0, 0, w, h, 0xFF140D26, 0xFF05040B);
-        int accent = Catalog.WORLDS[Gfx.clamp(game.mapWorld, 0, 4)].accent;
+        int accent = Catalog.WORLDS[Gfx.clamp(game.mapWorld, 0, Catalog.WORLD_COUNT - 1)].accent;
         for (int i = 0; i < 26; i++) {
             float px = (i * 379.7f + game.uiTime * (6 + i % 5)) % w;
             float py = (i * 211.3f + (float) Math.sin(game.uiTime * 0.4f + i) * 30 + h * 0.1f) % h;
@@ -262,6 +270,9 @@ public class Screens {
             case Game.LEADERBOARD:
                 drawLeaderboard(c, g);
                 break;
+            case Game.OWNER_PANEL:
+                drawOwner(c, g);
+                break;
             default:
                 drawMenu(c, g);
                 break;
@@ -289,7 +300,7 @@ public class Screens {
         float lw = w * 0.34f, lh = h - 240 * u;
         g.panel(c, lx, ly, lw, lh, 0xCC150F24, 0x446B5A96);
 
-        Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(save().classIndex, 0, 2)];
+        Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(save().classIndex, 0, Catalog.CLASSES.length - 1)];
         float ax = lx + lw / 2f, ay = ly + 96 * u;
         g.circle(c, ax, ay, 64 * u, Gfx.withAlpha(cd.color, 34));
         g.circleStroke(c, ax, ay, 54 * u, cd.color, 3 * u);
@@ -297,10 +308,10 @@ public class Screens {
         g.textShadow(c, save().playerName, ax, ly + 190 * u, 26 * u, Gfx.TEXT, 1, true);
         if (save().isOwner()) g.text(c, "VERIFIED OWNER", ax, ly + 214 * u, 11 * u, Gfx.GREEN, 1, true);
         g.text(c, cd.name + "  •  Lv " + save().level, ax, ly + 242 * u, 15 * u, cd.color, 1, true);
-        g.text(c, "Stage " + Math.max(1, save().maxStage + 1) + "  •  " + save().worldsCleared() + "/5 dunia",
+        g.text(c, "Stage " + Math.max(1, save().maxStage + 1) + "  •  " + save().worldsCleared() + "/" + Catalog.WORLD_COUNT + " dunia",
                 ax, ly + 268 * u, 13 * u, Gfx.DIM, 1, false);
         g.text(c, save().gold + " gold  •  " + save().shards + " shard", ax, ly + 292 * u, 13 * u, Gfx.GOLD, 1, false);
-        g.text(c, "Tiga jalan, satu takdir.", ax, ly + 330 * u, 13 * u, Gfx.DIM, 1, false);
+        g.text(c, "Enam jalan, satu takdir.", ax, ly + 330 * u, 13 * u, Gfx.DIM, 1, false);
         button(c, g, lx + 24 * u, ly + lh - 66 * u, lw - 48 * u, 42 * u,
                 "Ubah Nama: " + save().playerName, MENU_NAME, 3);
 
@@ -333,6 +344,10 @@ public class Screens {
         menuButton(c, g, gx, gy + row * (bh + gap), bw, bh, "Cara", "Bermain", MENU_HELP, 0, row, col);
         col++;
         menuButton(c, g, gx + col * (bw + gap), gy + row * (bh + gap), bw, bh, "Pengaturan", "Audio & kontrol", MENU_SETTINGS, 0, row, col);
+        if (save().isOwner()) {
+            col = 0; row++;
+            menuButton(c, g, gx, gy + row * (bh + gap), bw, bh, "Owner", "Panel admin", MENU_OWNER, 1, row, col);
+        }
 
         button(c, g, w - 190 * u, h - 78 * u, 150 * u, 46 * u, "Keluar", QUIT, 2);
         g.text(c, "Dibuat oleh Meon-XD", 40 * u, h - 28 * u, 12 * u, Gfx.GOLD, 0, true);
@@ -379,7 +394,7 @@ public class Screens {
         bg(c, g);
         button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Menu", BACK, 3);
         title(c, g, "PROFIL", 50 * u, 28 * u);
-        Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(save().classIndex, 0, 2)];
+        Catalog.ClassDef cd = Catalog.CLASSES[Gfx.clamp(save().classIndex, 0, Catalog.CLASSES.length - 1)];
         float px = 60 * u, py = 130 * u, pw = w - 120 * u, ph = h - 220 * u;
         g.panel(c, px, py, pw, ph, 0xCC150F24, 0x446B5A96);
         float ax = px + 150 * u, ay = py + 130 * u;
@@ -390,7 +405,7 @@ public class Screens {
         if (save().isOwner()) g.text(c, "VERIFIED OWNER", px + 302 * u, py + 102 * u, 12 * u, Gfx.GREEN, 0, true);
         g.text(c, cd.name + "  •  Level " + save().level + "  •  " + Catalog.DIFFICULTY[save().difficulty],
                 px + 300 * u, py + 138 * u, 15 * u, cd.color, 0, true);
-        g.text(c, "Stage " + Math.max(1, save().maxStage + 1) + "  •  " + save().worldsCleared() + "/5 dunia",
+        g.text(c, "Stage " + Math.max(1, save().maxStage + 1) + "  •  " + save().worldsCleared() + "/" + Catalog.WORLD_COUNT + " dunia",
                 px + 300 * u, py + 166 * u, 13 * u, Gfx.DIM, 0, false);
         g.text(c, save().gold + " gold  •  " + save().shards + " shard  •  " + save().points + " poin",
                 px + 300 * u, py + 190 * u, 13 * u, Gfx.GOLD, 0, false);
@@ -536,6 +551,79 @@ public class Screens {
         }
     }
 
+    private void drawOwner(Canvas c, Gfx g) {
+        float w = W(), h = H(), u = u();
+        bg(c, g);
+        button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Menu", BACK, 3);
+        title(c, g, "OWNER PANEL", 50 * u, 28 * u);
+        OnlineCoop o = game.online;
+        if (o == null || !o.loggedIn || !o.ownerVerified) {
+            g.panel(c, w / 2f - 320 * u, h / 2f - 90 * u, 640 * u, 180 * u, 0xCC150F24, 0x446B5A96);
+            g.text(c, "Akses owner butuh login online.", w / 2f, h / 2f - 30 * u, 18 * u, Gfx.TEXT, 1, true);
+            g.text(c, "Masuk sebagai akun owner di Co-op Online, lalu buka panel ini lagi.",
+                    w / 2f, h / 2f + 10 * u, 13 * u, Gfx.DIM, 1, false);
+            g.text(c, o != null && o.loggedIn ? "Akun: " + o.username : "Belum login online.",
+                    w / 2f, h / 2f + 44 * u, 12 * u, Gfx.GOLD, 1, false);
+            return;
+        }
+        float lx = 40 * u, ly = 120 * u, lw = (w - 100 * u) * 0.54f;
+        float rx = lx + lw + 20 * u, rw = w - rx - 40 * u;
+        float ph = h - 190 * u;
+        g.panel(c, lx, ly, lw, ph, 0xCC150F24, 0x446B5A96);
+        g.panel(c, rx, ly, rw, ph, 0xCC150F24, 0x446B5A96);
+        g.text(c, "CARI PEMAIN", lx + 20 * u, ly + 28 * u, 14 * u, Gfx.GOLD, 0, true);
+        button(c, g, lx + 20 * u, ly + 44 * u, lw - 150 * u, 42 * u,
+                o.adminQuery.length() == 0 ? "Ketik username..." : o.adminQuery, OWNER_SEARCH, 3);
+        button(c, g, lx + lw - 120 * u, ly + 44 * u, 100 * u, 42 * u, "Cari", OWNER_SEARCH, 0);
+        float y = ly + 104 * u;
+        g.text(c, "HASIL (" + o.adminResults.size() + ")", lx + 20 * u, y, 11 * u, Gfx.DIM, 0, true);
+        y += 20 * u;
+        for (int i = 0; i < o.adminResults.size() && i < 8; i++) {
+            OnlineCoop.PlayerRow r = o.adminResults.get(i);
+            boolean sel = r.id.equals(o.adminSelectedId);
+            g.roundRect(c, lx + 16 * u, y, lw - 32 * u, 46 * u, 8 * u, sel ? 0x662A2044 : 0x44120E20);
+            g.text(c, r.username + (r.vip ? "  VIP" : "") + (r.banned ? "  BAN" : ""),
+                    lx + 30 * u, y + 24 * u, 13 * u, sel ? Gfx.GOLD : Gfx.TEXT, 0, true);
+            g.text(c, "Lv " + r.level + "  •  " + r.gold + "g", lx + lw - 30 * u, y + 24 * u,
+                    11 * u, Gfx.DIM, 2, false);
+            reg(lx + 16 * u, y, lw - 32 * u, 46 * u, OWNER_ROW_BASE + i);
+            y += 52 * u;
+        }
+        if (o.adminResults.isEmpty()) {
+            g.text(c, o.adminBusy ? "Mencari..." : "Cari username lalu pilih pemain.",
+                    lx + 20 * u, y + 20 * u, 12 * u, Gfx.DIM, 0, false);
+        }
+        button(c, g, lx + 20 * u, ly + ph - 60 * u, lw - 40 * u, 42 * u, "Muat Ulang", OWNER_REFRESH, 3);
+
+        g.text(c, "AKSI OWNER", rx + 20 * u, ly + 28 * u, 14 * u, Gfx.GOLD, 0, true);
+        OnlineCoop.PlayerRow sel = o.adminSelected();
+        if (sel == null) {
+            g.text(c, "Pilih pemain di daftar kiri.", rx + rw / 2f, ly + 100 * u, 14 * u, Gfx.DIM, 1, false);
+        } else {
+            g.text(c, sel.username, rx + 20 * u, ly + 62 * u, 18 * u, Gfx.TEXT, 0, true);
+            g.text(c, "Lv " + sel.level + "  •  " + sel.gold + " gold", rx + 20 * u, ly + 88 * u,
+                    12 * u, Gfx.DIM, 0, false);
+            g.text(c, sel.vip ? "VIP aktif" : "Bukan VIP", rx + 20 * u, ly + 112 * u,
+                    12 * u, sel.vip ? Gfx.GREEN : Gfx.DIM, 0, true);
+            g.text(c, sel.banned ? "DIBLOKIR" : "Tidak diblokir", rx + 20 * u, ly + 136 * u,
+                    12 * u, sel.banned ? Gfx.RED : Gfx.DIM, 0, true);
+            g.text(c, "ID: " + sel.id, rx + 20 * u, ly + 162 * u, 10 * u, Gfx.DIM, 0, false);
+            float by = ly + 200 * u;
+            button(c, g, rx + 20 * u, by, rw - 40 * u, 44 * u,
+                    sel.vip ? "Cabut VIP" : "Beri VIP", OWNER_VIP, sel.vip ? 2 : 1);
+            button(c, g, rx + 20 * u, by + 54 * u, rw - 40 * u, 44 * u,
+                    sel.banned ? "Cabut Blokir" : "Blokir Pemain", OWNER_BAN, sel.banned ? 1 : 2);
+            button(c, g, rx + 20 * u, by + 108 * u, (rw - 50 * u) / 2f, 44 * u,
+                    "+10.000 Gold", OWNER_GOLD, 0);
+            button(c, g, rx + 30 * u + (rw - 50 * u) / 2f, by + 108 * u, (rw - 50 * u) / 2f, 44 * u,
+                    "+100 Diamond", OWNER_DIAMOND, 0);
+        }
+        if (o.adminMessage.length() > 0) {
+            g.wrap(c, o.adminMessage, w / 2f, h - 56 * u, w - 100 * u, 12 * u,
+                    o.adminBusy ? Gfx.CYAN : Gfx.GOLD, 2, 1, false);
+        }
+    }
+
     private void drawLeaderboard(Canvas c, Gfx g) {
         float w = W(), h = H(), u = u();
         bg(c, g);
@@ -602,41 +690,42 @@ public class Screens {
         title(c, g, "PILIH JALANMU", 52 * u, 30 * u);
         button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Kembali", BACK, 3);
 
-        float cw = Math.min(300 * u, (w - 160 * u) / 3f);
-        float ch = h * 0.60f;
-        float gap = 22 * u;
+        float cw = Math.min(258 * u, (w - 120 * u) / 3f);
+        float gap = 16 * u;
+        float ch = Math.min(252 * u, (h - 232 * u) / 2f);
         float total = cw * 3 + gap * 2;
         float x0 = w / 2f - total / 2f;
-        float y0 = h * 0.20f;
-        for (int i = 0; i < 3; i++) {
+        float y0 = h * 0.135f;
+        for (int i = 0; i < Catalog.CLASSES.length; i++) {
             Catalog.ClassDef cd = Catalog.CLASSES[i];
-            float x = x0 + i * (cw + gap);
+            float x = x0 + (i % 3) * (cw + gap);
+            float y = y0 + (i / 3) * (ch + gap);
             boolean sel = game.selClass == i;
             int fill = sel ? 0xF02A2044 : 0xDD1B1530;
-            g.roundRect(c, x, y0, cw, ch, 16 * u, fill);
-            g.roundRectStroke(c, x, y0, cw, ch, 16 * u, sel ? cd.color : 0x556B5A96, sel ? 3 * u : 1.5f * u);
+            g.roundRect(c, x, y, cw, ch, 14 * u, fill);
+            g.roundRectStroke(c, x, y, cw, ch, 14 * u, sel ? cd.color : 0x556B5A96, sel ? 3 * u : 1.5f * u);
+            float icx = x + cw / 2f, icy = y + 42 * u;
             if (sel) {
-                g.circle(c, x + cw / 2f, y0 + 62 * u, 46 * u + (float) Math.sin(game.uiTime * 3) * 3, Gfx.withAlpha(cd.color, 34));
+                g.circle(c, icx, icy, 38 * u + (float) Math.sin(game.uiTime * 3) * 3, Gfx.withAlpha(cd.color, 34));
             }
-            g.circle(c, x + cw / 2f, y0 + 62 * u, 34 * u, Gfx.withAlpha(cd.color, 60));
-            g.circleStroke(c, x + cw / 2f, y0 + 62 * u, 34 * u, cd.color, 2.5f * u);
-            drawClassIcon(c, g, i, x + cw / 2f, y0 + 62 * u, cd.color, u);
+            g.circle(c, icx, icy, 27 * u, Gfx.withAlpha(cd.color, 60));
+            g.circleStroke(c, icx, icy, 27 * u, cd.color, 2.2f * u);
+            drawClassIcon(c, g, i, icx, icy, cd.color, u * 0.85f);
 
-            g.text(c, cd.name, x + cw / 2f, y0 + 122 * u, 22 * u, cd.color, 1, true);
-            g.text(c, cd.role, x + cw / 2f, y0 + 148 * u, 13 * u, Gfx.DIM, 1, false);
-            g.wrap(c, cd.desc, x + 20 * u, y0 + 176 * u, cw - 40 * u, 13 * u, Gfx.DIM, 4, 1, false);
+            g.text(c, cd.name, icx, y + 80 * u, 18 * u, cd.color, 1, true);
+            g.text(c, cd.role, icx, y + 98 * u, 10.5f * u, Gfx.DIM, 1, false);
+            g.wrap(c, cd.desc, x + 14 * u, y + 112 * u, cw - 28 * u, 10.5f * u, Gfx.DIM, 2, 1, false);
 
-            float sy = y0 + ch - 132 * u;
-            statLine(c, g, "HP", cd.hp, x + 26 * u, sy, cw - 52 * u, Gfx.RED, u);
-            statLine(c, g, "MP", cd.mp, x + 26 * u, sy + 24 * u, cw - 52 * u, Gfx.BLUE, u);
-            statLine(c, g, "ATK", cd.atk, x + 26 * u, sy + 48 * u, cw - 52 * u, Gfx.ORANGE, u);
-            statLine(c, g, "DEF", cd.def, x + 26 * u, sy + 72 * u, cw - 52 * u, Gfx.CYAN, u);
-            statLine(c, g, "SPD", cd.spd, x + 26 * u, sy + 96 * u, cw - 52 * u, Gfx.GREEN, u);
+            float sy = y + ch - 76 * u;
+            statLine(c, g, "HP", cd.hp, x + 20 * u, sy, cw - 40 * u, Gfx.RED, u);
+            statLine(c, g, "ATK", cd.atk, x + 20 * u, sy + 19 * u, cw - 40 * u, Gfx.ORANGE, u);
+            statLine(c, g, "DEF", cd.def, x + 20 * u, sy + 38 * u, cw - 40 * u, Gfx.CYAN, u);
+            statLine(c, g, "SPD", cd.spd, x + 20 * u, sy + 57 * u, cw - 40 * u, Gfx.GREEN, u);
 
-            reg(x, y0, cw, ch, CLASS_BASE + i);
+            reg(x, y, cw, ch, CLASS_BASE + i);
             if (sel) {
-                g.roundRect(c, x + cw / 2f - 46 * u, y0 - 14 * u, 92 * u, 28 * u, 14 * u, cd.color);
-                g.text(c, "DIPILIH", x + cw / 2f, y0 - 14 * u, 12 * u, 0xFF1A1024, 1, true);
+                g.circle(c, x + 18 * u, y + 18 * u, 10 * u, cd.color);
+                g.text(c, "✓", x + 18 * u, y + 18 * u, 13 * u, 0xFF1A1024, 1, true);
             }
         }
         float bw = 320 * u;
@@ -653,10 +742,34 @@ public class Screens {
             g.circle(c, x, y, 5 * u, color);
             g.line(c, x, y - 22 * u, x, y - 14 * u, color, 3 * u);
             g.line(c, x, y + 14 * u, x, y + 22 * u, color, 3 * u);
-        } else {
+        } else if (cls == 2) {
             g.line(c, x - 14 * u, y + 14 * u, x + 12 * u, y - 12 * u, color, 4 * u);
             g.line(c, x - 2 * u, y - 2 * u, x + 16 * u, y - 16 * u, color, 3 * u);
             g.circle(c, x + 12 * u, y - 12 * u, 3 * u, color);
+        } else if (cls == 3) {
+            g.circleStroke(c, x + 2 * u, y, 13 * u, color, 2.8f * u);
+            g.line(c, x + 2 * u, y - 13 * u, x + 2 * u, y + 13 * u, color, 1.5f * u);
+            g.line(c, x - 16 * u, y, x + 20 * u, y, color, 2.2f * u);
+            g.line(c, x + 20 * u, y, x + 14 * u, y - 4 * u, color, 2.2f * u);
+            g.line(c, x + 20 * u, y, x + 14 * u, y + 4 * u, color, 2.2f * u);
+        } else if (cls == 4) {
+            g.line(c, x - 6 * u, y + 20 * u, x + 4 * u, y - 14 * u, color, 3.2f * u);
+            g.circleStroke(c, x + 5 * u, y - 18 * u, 6 * u, color, 2.4f * u);
+            g.circle(c, x + 5 * u, y - 18 * u, 2.5f * u, color);
+            g.circleStroke(c, x - 2 * u, y - 2 * u, 17 * u, Gfx.withAlpha(color, 150), 1.6f * u);
+        } else {
+            android.graphics.Path sh = new android.graphics.Path();
+            sh.moveTo(x, y - 14 * u);
+            sh.lineTo(x + 16 * u, y - 8 * u);
+            sh.lineTo(x + 13 * u, y + 9 * u);
+            sh.lineTo(x, y + 19 * u);
+            sh.lineTo(x - 13 * u, y + 9 * u);
+            sh.lineTo(x - 16 * u, y - 8 * u);
+            sh.close();
+            g.stroke(color, 2.6f * u);
+            c.drawPath(sh, g.p);
+            g.line(c, x, y - 8 * u, x, y + 10 * u, color, 2.4f * u);
+            g.line(c, x - 8 * u, y - 2 * u, x + 8 * u, y - 2 * u, color, 2.4f * u);
         }
     }
 
@@ -672,7 +785,7 @@ public class Screens {
 
     private void drawMap(Canvas c, Gfx g) {
         float w = W(), h = H(), u = u();
-        int wi = Gfx.clamp(game.mapWorld, 0, 4);
+        int wi = Gfx.clamp(game.mapWorld, 0, Catalog.WORLD_COUNT - 1);
         Catalog.WorldDef wd = Catalog.WORLDS[wi];
         bg(c, g);
         button(c, g, 18 * u, 18 * u, 90 * u, 42 * u, "‹ Menu", BACK, 3);
@@ -686,8 +799,8 @@ public class Screens {
         float total = cellW * 5 + gap * 4;
         float x0 = w / 2f - total / 2f;
         float y0 = h * 0.29f;
-        for (int i = 0; i < 5; i++) {
-            int idx = wi * 5 + i;
+        for (int i = 0; i < Catalog.STAGES_PER_WORLD; i++) {
+            int idx = wi * Catalog.STAGES_PER_WORLD + i;
             boolean cleared = save().cleared[idx];
             boolean unlocked = idx <= save().maxStage;
             float x = x0 + i * (cellW + gap);
@@ -697,9 +810,9 @@ public class Screens {
                     cleared ? 0x8843D17A : (unlocked ? 0x99E9C46A : 0x44554466), unlocked ? 2 * u : 1.2f * u);
             g.text(c, "" + (i + 1), x + cellW / 2f, y0 + 56 * u, 42 * u,
                     cleared ? Gfx.GREEN : (unlocked ? Gfx.GOLD : 0xFF5A5070), 1, true);
-            String nm = i == 4 ? "BOSS" : "Stage " + (i + 1);
+            String nm = i == Catalog.STAGES_PER_WORLD - 1 ? "BOSS" : "Stage " + (idx + 1);
             g.text(c, nm, x + cellW / 2f, y0 + 100 * u, 13 * u, unlocked ? Gfx.TEXT : Gfx.DIM, 1, true);
-            if (i == 4) {
+            if (i == Catalog.STAGES_PER_WORLD - 1) {
                 Catalog.BossDef bd = wd.boss;
                 g.text(c, bd.name, x + cellW / 2f, y0 + 122 * u, 11 * u, unlocked ? wd.accent : Gfx.DIM, 1, false);
             }
@@ -712,8 +825,8 @@ public class Screens {
 
         float ay = y0 + cellH + 34 * u;
         button(c, g, x0 - 62 * u, ay - 4 * u, 46 * u, 46 * u, "‹", PREV_WORLD, wi > 0 ? 0 : 3);
-        button(c, g, x0 + total + 16 * u, ay - 4 * u, 46 * u, 46 * u, "›", NEXT_WORLD, wi < 4 ? 0 : 3);
-        g.text(c, "Dunia " + (wi + 1) + " / 5", w / 2f, ay + 20 * u, 14 * u, Gfx.DIM, 1, false);
+        button(c, g, x0 + total + 16 * u, ay - 4 * u, 46 * u, 46 * u, "›", NEXT_WORLD, wi < Catalog.WORLD_COUNT - 1 ? 0 : 3);
+        g.text(c, "Dunia " + (wi + 1) + " / " + Catalog.WORLD_COUNT, w / 2f, ay + 20 * u, 14 * u, Gfx.DIM, 1, false);
 
         float iy = ay + 76 * u;
         int[] st = save().computeStats();
@@ -1025,7 +1138,7 @@ public class Screens {
             button(c, g, px + 130 * u, sy - 20 * u, 42 * u, 40 * u, "‹", LAN_STAGE_PREV, 3);
             g.text(c, "Stage " + (game.lanStage + 1), px + 220 * u, sy, 20 * u, Gfx.TEXT, 1, true);
             button(c, g, px + 300 * u, sy - 20 * u, 42 * u, 40 * u, "›", LAN_STAGE_NEXT, 3);
-            g.text(c, Catalog.WORLDS[Gfx.clamp(game.lanStage / 5, 0, 4)].name,
+            g.text(c, Catalog.WORLDS[Gfx.clamp(game.lanStage / Catalog.STAGES_PER_WORLD, 0, Catalog.WORLD_COUNT - 1)].name,
                     px + 470 * u, sy, 13 * u, Gfx.DIM, 0, false);
             button(c, g, px + 34 * u, by, 260 * u, 48 * u, "Mulai Co-op", LAN_START, connected ? 1 : 3);
             button(c, g, px + pw - 214 * u, by, 180 * u, 48 * u, "Keluar", LAN_LEAVE, 2);
@@ -1123,7 +1236,7 @@ public class Screens {
                 }
 
                 if (o.host) {
-                    int stage = Gfx.clamp(game.onlineStage, 0, 24);
+                    int stage = Gfx.clamp(game.onlineStage, 0, Catalog.STAGE_COUNT - 1);
                     g.text(c, "Stage", px + 50 * u, py + 380 * u, 13 * u, Gfx.DIM, 0, true);
                     button(c, g, px + 130 * u, py + 358 * u, 42 * u, 40 * u,
                             "‹", ONLINE_STAGE_PREV, 3);
@@ -1131,7 +1244,7 @@ public class Screens {
                             18 * u, Gfx.TEXT, 0, true);
                     button(c, g, px + 300 * u, py + 358 * u, 42 * u, 40 * u,
                             "›", ONLINE_STAGE_NEXT, 3);
-                    g.text(c, Catalog.WORLDS[Gfx.clamp(stage / 5, 0, 4)].name,
+                    g.text(c, Catalog.WORLDS[Gfx.clamp(stage / Catalog.STAGES_PER_WORLD, 0, Catalog.WORLD_COUNT - 1)].name,
                             px + 50 * u, py + 410 * u, 12 * u, Gfx.DIM, 0, false);
                     button(c, g, px + 50 * u, py + ph - 76 * u, 240 * u, 50 * u,
                             "Mulai Co-op", ONLINE_START, o.connected ? 1 : 3);
@@ -1198,7 +1311,7 @@ public class Screens {
         button(c, g, px, y + (rowH + gap) * 5 + 4 * u, pw, 44 * u, "Nama Pemain: " + save().playerName, MENU_NAME, 0);
         g.text(c, "Kualitas tinggi menambah dekorasi dunia dan partikel.",
                 w / 2f, y + (rowH + gap) * 5 + 64 * u, 12 * u, Gfx.DIM, 1, false);
-        g.text(c, "Mystic Realm  •  v1.1  •  dibuat murni dengan Canvas  •  Meon-XD",
+        g.text(c, "Mystic Realm  •  v1.2  •  dibuat murni dengan Canvas  •  Meon-XD",
                 w / 2f, h - 26 * u, 12 * u, Gfx.GOLD, 1, true);
     }
 
@@ -1235,7 +1348,7 @@ public class Screens {
         float w = W(), h = H(), u = u();
         Gameplay gp = game.gp;
         boolean won = gp != null && gp.won;
-        boolean finalWin = won && gp != null && gp.stageIndex >= 24;
+        boolean finalWin = won && gp != null && gp.stageIndex >= Catalog.STAGE_COUNT - 1;
         bg(c, g);
 
         int accent = won ? Gfx.GOLD : Gfx.RED;
@@ -1245,7 +1358,7 @@ public class Screens {
         g.textShadow(c, title, w / 2f, h * 0.22f, finalWin ? 46 * u : 52 * u, accent, 1, true);
         g.text(c, gp == null ? "" : gp.rSub, w / 2f, h * 0.22f + 44 * u, 16 * u, Gfx.DIM, 1, false);
         if (finalWin) {
-            g.text(c, "Lima dunia, lima penjaga, satu takdir.", w / 2f, h * 0.22f + 70 * u, 14 * u, Gfx.CYAN, 1, false);
+            g.text(c, "Sepuluh dunia, sepuluh penjaga, satu takdir.", w / 2f, h * 0.22f + 70 * u, 14 * u, Gfx.CYAN, 1, false);
         }
 
         float pw = Math.min(520 * u, w - 80 * u);
@@ -1273,7 +1386,7 @@ public class Screens {
         float bw = 200 * u, gap = 16 * u;
         float bx = w / 2f - (bw * 2 + gap) / 2f;
         float by = py + 208 * u;
-        if (won && gp != null && gp.stageIndex < 24) {
+        if (won && gp != null && gp.stageIndex < Catalog.STAGE_COUNT - 1) {
             button(c, g, bx, by, bw, 56 * u, "Lanjut", RESULT_NEXT, 1);
             button(c, g, bx + bw + gap, by, bw, 56 * u, "Peta", RESULT_MAP, 0);
         } else if (won) {

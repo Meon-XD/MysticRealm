@@ -16,6 +16,7 @@ import java.util.List;
 public class SaveData {
     private static final String PREFS = "mystic_realm_save";
     private static final String KEY = "save_v1";
+    private static final String SESSION_KEY = "online_session_v1";
 
     public boolean hasCharacter;
     public String playerName = "Pemain";
@@ -32,7 +33,7 @@ public class SaveData {
     public LinkedHashMap<String, Integer> ups = new LinkedHashMap<>();
 
     public int maxStage = 0;
-    public boolean[] cleared = new boolean[25];
+    public boolean[] cleared = new boolean[Catalog.STAGE_COUNT];
     public int currentStage = 0;
     public int difficulty = 1;
     public int seenWorld = 0;
@@ -45,6 +46,7 @@ public class SaveData {
     public float buttonScale = 1f;
     public boolean highQuality = true;
     public boolean ownerMode;
+    public boolean vip;
 
     private final SharedPreferences prefs;
 
@@ -76,6 +78,46 @@ public class SaveData {
 
     public boolean isOwner() {
         return ownerMode;
+    }
+
+    public SupabaseAuth.Session loadOnlineSession() {
+        String raw = prefs.getString(SESSION_KEY, null);
+        if (raw == null || raw.length() == 0) return null;
+        try {
+            JSONObject o = new JSONObject(raw);
+            SupabaseAuth.Session s = new SupabaseAuth.Session();
+            s.accessToken = o.optString("access", "");
+            s.refreshToken = o.optString("refresh", "");
+            s.userId = o.optString("userId", "");
+            s.username = o.optString("username", "");
+            s.expiresAt = o.optLong("expiresAt", 0L);
+            if (s.accessToken.length() == 0 || s.userId.length() == 0) return null;
+            return s;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public void saveOnlineSession(SupabaseAuth.Session s) {
+        if (s == null) {
+            clearOnlineSession();
+            return;
+        }
+        try {
+            JSONObject o = new JSONObject();
+            o.put("access", s.accessToken == null ? "" : s.accessToken);
+            o.put("refresh", s.refreshToken == null ? "" : s.refreshToken);
+            o.put("userId", s.userId == null ? "" : s.userId);
+            o.put("username", s.username == null ? "" : s.username);
+            o.put("expiresAt", s.expiresAt);
+            prefs.edit().putString(SESSION_KEY, o.toString()).apply();
+        } catch (Exception e) {
+            // ignore session save failure
+        }
+    }
+
+    public void clearOnlineSession() {
+        prefs.edit().remove(SESSION_KEY).apply();
     }
 
     public void applyOwnerBoosts() {
@@ -151,7 +193,7 @@ public class SaveData {
     }
 
     public int[] computeStats() {
-        Catalog.ClassDef c = Catalog.CLASSES[Gfx.clamp(classIndex, 0, 2)];
+        Catalog.ClassDef c = Catalog.CLASSES[Gfx.clamp(classIndex, 0, Catalog.CLASSES.length - 1)];
         int hp = c.hp + (level - 1) * 14 + tracks[0] * 8;
         int mp = c.mp + (level - 1) * 5 + tracks[3] * 6;
         int atk = c.atk + (level - 1) * 3 + tracks[1] * 3;
@@ -221,7 +263,7 @@ public class SaveData {
 
     public void reset(int cls) {
         hasCharacter = true;
-        classIndex = Gfx.clamp(cls, 0, 2);
+        classIndex = Gfx.clamp(cls, 0, Catalog.CLASSES.length - 1);
         level = 1;
         exp = 0;
         gold = 120;
@@ -233,7 +275,7 @@ public class SaveData {
         items = new LinkedHashMap<>();
         ups = new LinkedHashMap<>();
         maxStage = 0;
-        cleared = new boolean[25];
+        cleared = new boolean[Catalog.STAGE_COUNT];
         currentStage = 0;
         difficulty = 1;
 
@@ -252,17 +294,17 @@ public class SaveData {
 
     public int worldsCleared() {
         int n = 0;
-        for (int w = 0; w < 5; w++) {
-            if (cleared[w * 5 + 4]) n++;
+        for (int w = 0; w < Catalog.WORLD_COUNT; w++) {
+            if (cleared[w * Catalog.STAGES_PER_WORLD + Catalog.STAGES_PER_WORLD - 1]) n++;
         }
         return n;
     }
 
     public void markCleared(int stageIndex) {
-        if (stageIndex < 0 || stageIndex >= 25) return;
+        if (stageIndex < 0 || stageIndex >= Catalog.STAGE_COUNT) return;
         cleared[stageIndex] = true;
-        if (stageIndex + 1 < 25) maxStage = Math.max(maxStage, stageIndex + 1);
-        else maxStage = 24;
+        if (stageIndex + 1 < Catalog.STAGE_COUNT) maxStage = Math.max(maxStage, stageIndex + 1);
+        else maxStage = Catalog.STAGE_COUNT - 1;
     }
 
     public int unlockedDifficulty() {
@@ -277,7 +319,8 @@ public class SaveData {
             hasCharacter = o.optBoolean("has", false);
             playerName = cleanPlayerName(o.optString("playerName", "Pemain"));
             ownerMode = false;
-            classIndex = o.optInt("class", 0);
+            vip = o.optBoolean("vip", false);
+            classIndex = Gfx.clamp(o.optInt("class", 0), 0, Catalog.CLASSES.length - 1);
             level = o.optInt("level", 1);
             exp = o.optInt("exp", 0);
             gold = o.optInt("gold", 120);
@@ -315,7 +358,7 @@ public class SaveData {
                 }
             }
             maxStage = o.optInt("maxStage", 0);
-            cleared = new boolean[25];
+            cleared = new boolean[Catalog.STAGE_COUNT];
             JSONArray cl = o.optJSONArray("cleared");
             if (cl != null) for (int i = 0; i < Math.min(25, cl.length()); i++) cleared[i] = cl.optBoolean(i, false);
             currentStage = o.optInt("currentStage", 0);
@@ -369,7 +412,7 @@ public class SaveData {
             o.put("ups", up);
             o.put("maxStage", maxStage);
             JSONArray cl = new JSONArray();
-            for (int i = 0; i < 25; i++) cl.put(cleared[i]);
+            for (int i = 0; i < Catalog.STAGE_COUNT; i++) cl.put(cleared[i]);
             o.put("cleared", cl);
             o.put("currentStage", currentStage);
             o.put("difficulty", difficulty);
@@ -381,6 +424,7 @@ public class SaveData {
             o.put("sensitivity", sensitivity);
             o.put("buttonScale", buttonScale);
             o.put("quality", highQuality);
+            o.put("vip", vip);
             prefs.edit().putString(KEY, o.toString()).apply();
         } catch (Exception e) {
             // ignore save failure
@@ -400,8 +444,10 @@ public class SaveData {
     }
 
     public void erase() {
-        prefs.edit().remove(KEY).apply();
+        prefs.edit().remove(KEY).remove(SESSION_KEY).apply();
         hasCharacter = false;
+        vip = false;
+        ownerMode = false;
     }
 
     public List<String> consumables() {

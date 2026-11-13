@@ -228,11 +228,11 @@ public class LanCoop {
         if (p.length == 0) return;
         if ("HELLO".equals(p[0])) {
             if (p.length > 1) remoteName = cleanName(p[1]);
-            if (p.length > 2) remoteClass = Gfx.clamp(parseInt(p[2], 0), 0, 2);
+            if (p.length > 2) remoteClass = Gfx.clamp(parseInt(p[2], 0), 0, Catalog.CLASSES.length - 1);
             if (p.length > 3) remoteLevel = Math.max(1, parseInt(p[3], 1));
         } else if ("STAGE".equals(p[0])) {
             int s = parseInt(p.length > 1 ? p[1] : "-1", -1);
-            if (s >= 0 && s < 25) {
+            if (s >= 0 && s < Catalog.STAGE_COUNT) {
                 remoteStage = s;
                 synchronized (this) {
                     stageRequest = s;
@@ -244,7 +244,7 @@ public class LanCoop {
             remoteDir = parseFloat(p[3], remoteDir);
             remoteHp = parseFloat(p[4], remoteHp);
             remoteMaxHp = Math.max(1f, parseFloat(p[5], remoteMaxHp));
-            remoteClass = Gfx.clamp(parseInt(p[6], remoteClass), 0, 2);
+            remoteClass = Gfx.clamp(parseInt(p[6], remoteClass), 0, Catalog.CLASSES.length - 1);
             remoteMoving = "1".equals(p[7]);
             if (p.length > 8) remoteStage = parseInt(p[8], remoteStage);
         } else if ("ESNAP".equals(p[0])) {

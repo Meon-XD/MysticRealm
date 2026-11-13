@@ -186,6 +186,10 @@ public final class SupabaseAuth {
         if (lower.contains("room_full")) return "Room sudah penuh.";
         if (lower.contains("room_not_waiting")) return "Room sudah dimulai.";
         if (lower.contains("not_host")) return "Hanya host yang bisa memulai.";
+        if (lower.contains("account_banned")) return "Akun ini diblokir oleh owner.";
+        if (lower.contains("owner_only")) return "Akses owner ditolak server.";
+        if (lower.contains("cannot_modify_owner")) return "Akun owner tidak bisa diubah.";
+        if (lower.contains("target_not_found")) return "Pemain tidak ditemukan.";
         if (lower.contains("auth_required")) return "Silakan login ulang.";
         if (msg.length() > 0) return msg;
         return "Permintaan gagal (" + status + ").";

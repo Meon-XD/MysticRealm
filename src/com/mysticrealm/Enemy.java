@@ -42,6 +42,7 @@ public class Enemy {
     public boolean enraged;
     public float time;
     public float eliteCd;
+    public float attackAnim;
 
     private final Random rnd = new Random();
 
@@ -175,6 +176,7 @@ public class Enemy {
             return;
         }
         if (hitFlash > 0) hitFlash -= dt;
+        if (attackAnim > 0) attackAnim -= dt;
         if (poison > 0) {
             poison -= dt;
             poisonTick -= dt;
@@ -276,6 +278,7 @@ public class Enemy {
                 atkCd = 1.15f + rnd.nextFloat() * 0.3f;
                 dir = (float) Math.atan2(dy, dx);
                 t.hurt(atk * (0.9f + rnd.nextFloat() * 0.25f), this);
+                attackAnim = 0.24f;
                 gp.fxSlash(x, y, dir, radius + 34, color);
             }
         } else {
@@ -317,6 +320,7 @@ public class Enemy {
                 float tx = t.x();
                 float ty = t.y();
                 float sa = (float) Math.atan2(ty - y, tx - x);
+                attackAnim = 0.2f;
                 gp.spawnEnemyProjectile(x + (float) Math.cos(sa) * radius, y + (float) Math.sin(sa) * radius,
                         sa, 300f, atk * 0.95f, color, 9f, 0, t.uid());
                 gp.audio.play("attack", 0.25f);
@@ -355,6 +359,7 @@ public class Enemy {
             } else if (d <= radius + t.radius() + 55 && atkCd <= 0) {
                 atkCd = 1.3f;
                 t.hurt(atk * 1.05f, this);
+                attackAnim = 0.26f;
                 gp.fxSlash(x, y, ang, radius + 70, color);
             }
         }
@@ -409,7 +414,8 @@ public class Enemy {
         }
         float sp = Gfx.clamp(1f - spawnT / 0.4f, 0.25f, 1f);
         float sc = scale * sp;
-        float bob = (float) Math.sin(time * 3.2f + x * 0.01f) * 2f;
+        float bobAmount = (type == 7 || type == 25 || type == 28) ? 6f : (type == 0 || type == 5 ? 4f : 2f);
+        float bob = (float) Math.sin(time * (type == 7 ? 2.6f : 4f) + x * 0.01f) * bobAmount;
         g.fill(0x44000000);
         c.drawOval(x - radius, y + radius * 0.55f, x + radius, y + radius * 0.95f, g.p);
 
@@ -429,6 +435,10 @@ public class Enemy {
         c.translate(x, y + bob - (boss ? 8f : 4f));
         if (boss) c.scale(sc / 2f, sc / 2f);
         else c.scale(sc, sc);
+        if (attackAnim > 0) {
+            float k = attackAnim / 0.26f;
+            c.translate((float) Math.cos(dir) * r * 0.55f * k, (float) Math.sin(dir) * r * 0.55f * k);
+        }
 
         switch (type) {
             case 0: {
@@ -557,11 +567,187 @@ public class Enemy {
                 c.drawOval(r * 0.45f, -r * 0.2f, r * 1.0f, r * 0.35f, g.p);
                 break;
             }
+            case 20: {
+                g.circle(c, -r * 0.15f, r * 0.1f, r * 0.75f, Gfx.withAlpha(dark, 190));
+                g.circle(c, r * 0.35f, r * 0.1f, r * 0.5f, body);
+                g.fill(dark);
+                c.drawOval(r * 0.25f, -r * 0.2f, r * 1.15f, r * 0.35f, g.p);
+                g.circle(c, r * 0.95f, -r * 0.05f, r * 0.2f, light);
+                Path scorpTail = new Path();
+                scorpTail.moveTo(-r * 0.5f, 0);
+                scorpTail.quadTo(-r * 1.1f, -r * 0.9f, -r * 0.45f, -r * 1.25f);
+                g.stroke(body, Math.max(2f, r * 0.16f));
+                c.drawPath(scorpTail, g.p);
+                g.circle(c, -r * 0.45f, -r * 1.28f, r * 0.16f, 0xFFFFDD55);
+                g.line(c, r * 0.5f, -r * 0.2f, r * 1.3f, -r * 0.65f, body, Math.max(2f, r * 0.16f));
+                g.line(c, r * 0.5f, r * 0.35f, r * 1.3f, r * 0.75f, body, Math.max(2f, r * 0.16f));
+                g.line(c, r * 1.3f, -r * 0.65f, r * 1.55f, -r * 0.4f, light, 2.5f);
+                g.line(c, r * 1.3f, r * 0.75f, r * 1.55f, r * 0.5f, light, 2.5f);
+                g.circle(c, r * 0.7f, -r * 0.15f, 3f, 0xFFFF5544);
+                break;
+            }
+            case 21: {
+                for (int i = 0; i < 4; i++) {
+                    float sd = (i < 2 ? -1f : 1f);
+                    float yy = -r * 0.5f + i * r * 0.35f;
+                    g.line(c, sd * r * 0.2f, yy, sd * r * 1.25f, yy - r * 0.35f + (float) Math.sin(time * 6 + i) * 3f,
+                            dark, Math.max(1.6f, r * 0.09f));
+                    g.line(c, sd * r * 1.25f, yy - r * 0.35f, sd * r * 1.55f, yy + r * 0.1f, dark, 2f);
+                }
+                g.circle(c, 0, r * 0.15f, r * 0.7f, body);
+                g.circle(c, 0, -r * 0.45f, r * 0.45f, light);
+                g.circle(c, -r * 0.16f, -r * 0.5f, r * 0.1f, 0xFFFF3355);
+                g.circle(c, r * 0.16f, -r * 0.5f, r * 0.1f, 0xFFFF3355);
+                g.circle(c, 0, r * 0.3f, r * 0.28f, Gfx.withAlpha(0xFFFF3355, 90));
+                break;
+            }
+            case 22: {
+                g.roundRect(c, -r * 0.28f, -r * 0.1f, r * 0.56f, r * 1.05f, r * 0.25f, 0xFFE8DFC0);
+                g.fill(Gfx.mix(body, 0xFF000000, 0.25f));
+                c.drawOval(-r * 0.9f, -r * 1.0f, r * 0.9f, r * 0.25f, g.p);
+                g.fill(body);
+                c.drawOval(-r * 0.78f, -r * 1.12f, r * 0.78f, r * 0.2f, g.p);
+                g.circle(c, -r * 0.35f, -r * 0.78f, r * 0.16f, light);
+                g.circle(c, r * 0.3f, -r * 0.6f, r * 0.12f, light);
+                g.circle(c, 0, -r * 0.95f, r * 0.1f, light);
+                g.circle(c, -r * 0.12f, r * 0.45f, 2.6f, 0xFF302018);
+                g.circle(c, r * 0.12f, r * 0.45f, 2.6f, 0xFF302018);
+                break;
+            }
+            case 23: {
+                g.fill(Gfx.withAlpha(0xFF1A1522, 120));
+                c.drawOval(-r * 0.75f, r * 0.1f, r * 0.75f, r * 0.9f, g.p);
+                g.fill(body);
+                c.drawOval(-r * 0.42f, -r * 0.62f, r * 0.42f, r * 0.5f, g.p);
+                g.circle(c, -r * 0.17f, -r * 0.4f, r * 0.11f, 0xFF0B0714);
+                g.circle(c, r * 0.17f, -r * 0.4f, r * 0.11f, 0xFF0B0714);
+                for (int i = 0; i < 3; i++) {
+                    g.line(c, -r * 0.35f, -r * 0.05f + i * r * 0.22f, r * 0.35f, -r * 0.05f + i * r * 0.22f, 0xFFCFC6AD, 2.4f);
+                }
+                g.line(c, -r * 0.3f, r * 0.55f, -r * 0.55f, r * 1.0f, 0xFFCFC6AD, 3f);
+                g.line(c, r * 0.3f, r * 0.55f, r * 0.55f, r * 1.0f, 0xFFCFC6AD, 3f);
+                g.line(c, r * 0.45f, 0, r * 1.35f, -r * 0.6f, 0xFFC9C9D9, 4f);
+                g.line(c, r * 0.6f, -r * 0.25f, r * 1.0f, -r * 0.15f, 0xFF8A6A3A, 3f);
+                break;
+            }
+            case 24: {
+                c.save();
+                c.rotate(0.12f);
+                g.roundRect(c, -r * 0.55f, -r * 0.55f, r * 1.1f, r * 1.4f, 7, body);
+                g.roundRect(c, -r * 0.4f, -r * 0.9f, r * 0.8f, r * 0.5f, 6, light);
+                g.circle(c, -r * 0.14f, -r * 0.68f, 2.8f, 0xFFFF4D4D);
+                g.circle(c, r * 0.14f, -r * 0.68f, 2.8f, 0xFFFF4D4D);
+                g.line(c, -r * 0.35f, -r * 0.2f, -r * 1.25f, r * 0.05f, body, Math.max(3f, r * 0.2f));
+                g.line(c, r * 0.35f, -r * 0.2f, r * 1.2f, -r * 0.15f, body, Math.max(3f, r * 0.2f));
+                g.circle(c, -r * 1.3f, r * 0.08f, r * 0.14f, light);
+                g.circle(c, r * 1.25f, -r * 0.17f, r * 0.14f, light);
+                g.line(c, -r * 0.2f, r * 0.35f, r * 0.15f, r * 0.85f, Gfx.withAlpha(0xFF3A1A18, 180), 2f);
+                c.restore();
+                break;
+            }
+            case 25: {
+                float flap = (float) Math.sin(time * 7) * r * 0.25f;
+                Path wl = new Path();
+                wl.moveTo(-r * 0.2f, -r * 0.2f);
+                wl.lineTo(-r * 1.5f, -r * 0.9f - flap);
+                wl.lineTo(-r * 1.0f, r * 0.15f - flap * 0.4f);
+                wl.close();
+                g.fill(Gfx.withAlpha(dark, 200));
+                c.drawPath(wl, g.p);
+                Path wr = new Path();
+                wr.moveTo(r * 0.2f, -r * 0.2f);
+                wr.lineTo(r * 1.5f, -r * 0.9f + flap);
+                wr.lineTo(r * 1.0f, r * 0.15f + flap * 0.4f);
+                wr.close();
+                c.drawPath(wr, g.p);
+                g.roundRect(c, -r * 0.35f, -r * 0.5f, r * 0.7f, r * 1.1f, 8, body);
+                g.circle(c, 0, -r * 0.65f, r * 0.32f, light);
+                g.line(c, -r * 0.2f, -r * 0.9f, -r * 0.3f, -r * 1.25f, 0xFFFFD36E, 3f);
+                g.line(c, r * 0.2f, -r * 0.9f, r * 0.3f, -r * 1.25f, 0xFFFFD36E, 3f);
+                g.line(c, -r * 0.18f, r * 0.55f, -r * 0.28f, r * 1.05f, 0xFFFFD36E, 2.6f);
+                g.line(c, r * 0.18f, r * 0.55f, r * 0.28f, r * 1.05f, 0xFFFFD36E, 2.6f);
+                g.circle(c, -r * 0.13f, -r * 0.68f, 2.4f, 0xFF0B0714);
+                g.circle(c, r * 0.13f, -r * 0.68f, 2.4f, 0xFF0B0714);
+                break;
+            }
+            case 26: {
+                for (int i = 3; i >= 0; i--) {
+                    float a = time * 2.2f - i * 0.6f;
+                    float sx = (float) Math.cos(dir) * (r * 0.5f * i) - (float) Math.sin(dir) * (float) Math.sin(a) * r * 0.3f;
+                    float sy = (float) Math.sin(dir) * (r * 0.5f * i) + (float) Math.cos(dir) * (float) Math.sin(a) * r * 0.3f;
+                    g.circle(c, -sx, -sy, r * (0.34f - i * 0.045f), i == 0 ? body : dark);
+                }
+                g.circle(c, r * 0.45f, 0, r * 0.42f, body);
+                g.circle(c, r * 0.6f, -r * 0.12f, 2.6f, 0xFFFFE08A);
+                g.line(c, r * 0.2f, -r * 0.35f, r * 0.1f, -r * 0.85f, light, 3f);
+                g.line(c, -r * 0.3f, -r * 0.15f, -r * 0.7f, -r * 0.55f, Gfx.withAlpha(color, 180), 2.4f);
+                break;
+            }
+            case 27: {
+                for (int i = -1; i <= 1; i++) {
+                    Path cr = new Path();
+                    cr.moveTo(i * r * 0.45f, -r * 0.25f);
+                    cr.lineTo(i * r * 0.45f - r * 0.18f, -r * 1.0f);
+                    cr.lineTo(i * r * 0.45f + r * 0.18f, -r * 1.0f);
+                    cr.close();
+                    g.fill(Gfx.withAlpha(light, 180));
+                    c.drawPath(cr, g.p);
+                }
+                g.fill(dark);
+                c.drawOval(-r * 0.95f, -r * 0.35f, r * 0.95f, r * 0.5f, g.p);
+                g.fill(body);
+                c.drawOval(-r * 0.7f, -r * 0.45f, r * 0.7f, r * 0.4f, g.p);
+                g.circle(c, -r * 0.62f, -r * 0.55f, 3f, 0xFFFF5544);
+                g.circle(c, r * 0.62f, -r * 0.55f, 3f, 0xFFFF5544);
+                g.line(c, -r * 0.85f, -r * 0.05f, -r * 1.35f, -r * 0.4f, body, 4f);
+                g.line(c, r * 0.85f, -r * 0.05f, r * 1.35f, -r * 0.4f, body, 4f);
+                break;
+            }
+            case 28: {
+                Path body28 = new Path();
+                body28.moveTo(0, -r * 1.05f);
+                body28.quadTo(r * 0.85f, -r * 0.2f, r * 0.45f, r * 1.0f);
+                body28.lineTo(0, r * 0.6f);
+                body28.lineTo(-r * 0.45f, r * 1.0f);
+                body28.quadTo(-r * 0.85f, -r * 0.2f, 0, -r * 1.05f);
+                body28.close();
+                g.fill(Gfx.withAlpha(body, 170));
+                c.drawPath(body28, g.p);
+                g.circle(c, 0, -r * 0.5f, r * 0.36f, 0xFF120D1C);
+                g.circle(c, -r * 0.13f, -r * 0.55f, 3f, 0xFF7FE0FF);
+                g.circle(c, r * 0.13f, -r * 0.55f, 3f, 0xFF7FE0FF);
+                g.line(c, -r * 0.5f, 0, -r * 1.05f, r * 0.4f, Gfx.withAlpha(body, 150), 4f);
+                g.line(c, r * 0.5f, 0, r * 1.05f, r * 0.4f, Gfx.withAlpha(body, 150), 4f);
+                for (int i = 0; i < 3; i++) {
+                    g.circle(c, (float) Math.sin(time * 2 + i) * r * 0.35f, r * 0.75f + i * r * 0.12f, r * 0.08f, Gfx.withAlpha(color, 140));
+                }
+                break;
+            }
+            case 29: {
+                g.fill(dark);
+                c.drawOval(-r * 0.68f, r * 0.05f, r * 0.68f, r * 0.8f, g.p);
+                g.fill(body);
+                c.drawOval(-r * 0.48f, -r * 0.75f, r * 0.48f, r * 0.55f, g.p);
+                g.fill(0xFF1A1420);
+                c.drawOval(-r * 0.5f, -r * 0.35f, r * 0.5f, r * 0.05f, g.p);
+                g.circle(c, -r * 0.15f, -r * 0.55f, 2.6f, 0xFFFFD36E);
+                g.circle(c, r * 0.15f, -r * 0.55f, 2.6f, 0xFFFFD36E);
+                g.fill(0xFF7A2E2E);
+                c.drawOval(-r * 0.5f, -r * 0.85f, r * 0.5f, -r * 0.6f, g.p);
+                g.line(c, r * 0.4f, 0, r * 1.25f, -r * 0.55f, 0xFFC9C9D9, 3.4f);
+                g.line(c, r * 0.3f, -r * 0.05f, r * 0.55f, 0.1f, 0xFF8A6A3A, 4f);
+                g.line(c, -r * 0.4f, r * 0.2f, -r * 0.9f, r * 0.6f, Gfx.withAlpha(dark, 200), 4f);
+                break;
+            }
             default: {
                 drawBoss(c, g, r, body, dark, light);
                 break;
             }
         }
+        g.fill(Gfx.withAlpha(light, 62));
+        c.drawOval(-r * 0.52f, -r * 0.62f, -r * 0.1f, -r * 0.34f, g.p);
+        g.line(c, -r * 0.52f, r * 0.48f, r * 0.48f, r * 0.48f,
+                Gfx.withAlpha(dark, 95), Math.max(1.2f, r * 0.045f));
         c.restore();
 
         if (boss || elite || hp < maxHp) {
@@ -651,6 +837,149 @@ public class Enemy {
                 g.circleStroke(c, 0, -r * 0.6f, r * 1.1f, Gfx.withAlpha(0xFFB07CFF, 110), 3);
                 g.line(c, r * 0.6f, -r * 0.2f, r * 1.6f, -r * 0.8f, 0xFFB07CFF, 6);
                 g.line(c, -r * 0.6f, -r * 0.2f, -r * 1.6f, -r * 0.8f, 0xFFB07CFF, 6);
+                break;
+            }
+            case 5: {
+                g.fill(Gfx.withAlpha(color, 45));
+                c.drawOval(-r * 1.4f, -r * 1.2f, r * 1.4f, r * 1.2f, g.p);
+                for (int i = 4; i >= 1; i--) {
+                    float a = time * 1.8f - i * 0.5f;
+                    g.circle(c, -r * i * 0.32f, (float) Math.sin(a) * r * 0.35f, r * (0.55f - i * 0.07f), i % 2 == 0 ? dark : body);
+                }
+                Path fin = new Path();
+                fin.moveTo(-r * 0.2f, -r * 0.9f);
+                fin.lineTo(-r * 1.2f, -r * 1.9f);
+                fin.lineTo(-r * 0.7f, -r * 0.5f);
+                fin.close();
+                g.fill(Gfx.withAlpha(0xFF9BE8FF, 170));
+                c.drawPath(fin, g.p);
+                g.circle(c, r * 0.35f, -r * 0.2f, r * 0.6f, body);
+                g.circle(c, r * 0.55f, -r * 0.35f, 6f, 0xFFFFE08A);
+                g.line(c, r * 0.1f, -r * 0.6f, -r * 0.1f, -r * 1.15f, 0xFFE8FBFF, 6f);
+                g.line(c, r * 0.5f, -r * 0.55f, r * 0.7f, -r * 1.0f, 0xFFE8FBFF, 5f);
+                break;
+            }
+            case 6: {
+                g.fill(Gfx.withAlpha(color, 45));
+                c.drawOval(-r * 1.4f, -r * 1.35f, r * 1.4f, r * 1.35f, g.p);
+                Path cw = new Path();
+                cw.moveTo(-r * 0.3f, -r * 0.4f);
+                cw.lineTo(-r * 1.6f, -r * 1.2f);
+                cw.lineTo(-r * 1.2f, r * 0.2f);
+                cw.close();
+                g.fill(Gfx.withAlpha(Gfx.mix(color, 0xFFFFFFFF, 0.3f), 150));
+                c.drawPath(cw, g.p);
+                Path cw2 = new Path();
+                cw2.moveTo(r * 0.3f, -r * 0.4f);
+                cw2.lineTo(r * 1.6f, -r * 1.2f);
+                cw2.lineTo(r * 1.2f, r * 0.2f);
+                cw2.close();
+                c.drawPath(cw2, g.p);
+                g.roundRect(c, -r * 0.7f, -r * 0.9f, r * 1.4f, r * 1.7f, 10, body);
+                g.circle(c, 0, -r * 1.0f, r * 0.52f, light);
+                g.circle(c, -r * 0.18f, -r * 1.05f, 4f, 0xFFD9C4FF);
+                g.circle(c, r * 0.18f, -r * 1.05f, 4f, 0xFFD9C4FF);
+                for (int i = -1; i <= 1; i++) {
+                    Path sh = new Path();
+                    sh.moveTo(i * r * 0.4f - r * 0.16f, -r * 1.35f);
+                    sh.lineTo(i * r * 0.4f, -r * 1.95f);
+                    sh.lineTo(i * r * 0.4f + r * 0.16f, -r * 1.35f);
+                    sh.close();
+                    g.fill(Gfx.withAlpha(Gfx.mix(color, 0xFFFFFFFF, 0.5f), 210));
+                    c.drawPath(sh, g.p);
+                }
+                break;
+            }
+            case 7: {
+                g.fill(Gfx.withAlpha(color, 55));
+                c.drawOval(-r * 1.45f, -r * 1.45f, r * 1.45f, r * 1.45f, g.p);
+                float flap = (float) Math.sin(time * 5) * r * 0.35f;
+                Path w = new Path();
+                w.moveTo(-r * 0.3f, -r * 0.5f);
+                w.lineTo(-r * 2.0f, -r * 1.2f - flap);
+                w.lineTo(-r * 1.3f, r * 0.1f);
+                w.close();
+                g.fill(Gfx.withAlpha(Gfx.mix(color, 0xFFFFFFFF, 0.25f), 150));
+                c.drawPath(w, g.p);
+                Path w2 = new Path();
+                w2.moveTo(r * 0.3f, -r * 0.5f);
+                w2.lineTo(r * 2.0f, -r * 1.2f + flap);
+                w2.lineTo(r * 1.3f, r * 0.1f);
+                w2.close();
+                c.drawPath(w2, g.p);
+                g.roundRect(c, -r * 0.55f, -r * 0.9f, r * 1.1f, r * 1.6f, 9, body);
+                g.circle(c, 0, -r * 0.95f, r * 0.42f, light);
+                g.circle(c, -r * 0.16f, -r * 0.98f, 4f, 0xFFFFFFFF);
+                g.circle(c, r * 0.16f, -r * 0.98f, 4f, 0xFFFFFFFF);
+                Path bolt = new Path();
+                bolt.moveTo(r * 0.8f, -r * 0.9f);
+                bolt.lineTo(r * 1.05f, -r * 0.3f);
+                bolt.lineTo(r * 0.82f, -r * 0.25f);
+                bolt.lineTo(r * 1.0f, r * 0.45f);
+                bolt.lineTo(r * 0.6f, -r * 0.15f);
+                bolt.lineTo(r * 0.85f, -r * 0.2f);
+                bolt.close();
+                g.fill(0xFFFFF2A8);
+                c.drawPath(bolt, g.p);
+                break;
+            }
+            case 8: {
+                g.fill(Gfx.withAlpha(0xFF6B8A3A, 55));
+                c.drawOval(-r * 1.45f, -r * 1.3f, r * 1.45f, r * 1.3f, g.p);
+                for (int i = 0; i < 4; i++) {
+                    float a = i * 1.57f + time * 0.4f;
+                    float vx = (float) Math.cos(a) * r * 1.0f;
+                    float vy = (float) Math.sin(a) * r * 0.7f;
+                    g.line(c, 0, r * 0.5f, vx, vy, Gfx.withAlpha(Gfx.mix(color, 0xFFFFFFFF, 0.2f), 160), 4f);
+                    g.circle(c, vx, vy, r * 0.09f, 0xFFB9E06A);
+                }
+                g.roundRect(c, -r * 0.75f, -r * 0.9f, r * 1.5f, r * 1.7f, 12, body);
+                g.circle(c, 0, -r * 1.0f, r * 0.5f, light);
+                g.circle(c, -r * 0.18f, -r * 1.02f, 4.4f, 0xFFC6FF5E);
+                g.circle(c, r * 0.18f, -r * 1.02f, 4.4f, 0xFFC6FF5E);
+                for (int i = -1; i <= 1; i++) {
+                    g.line(c, i * r * 0.42f, -r * 1.25f, i * r * 0.55f, -r * 1.75f, 0xFF7A9A3A, 4f);
+                    g.circle(c, i * r * 0.55f, -r * 1.78f, r * 0.08f, 0xFFE07AA0);
+                }
+                g.circle(c, 0, r * 0.4f, r * 0.22f, Gfx.withAlpha(0xFF9BD44A, 120));
+                break;
+            }
+            case 9: {
+                g.fill(Gfx.withAlpha(color, 60));
+                c.drawOval(-r * 1.5f, -r * 1.4f, r * 1.5f, r * 1.4f, g.p);
+                float flap = (float) Math.sin(time * 4) * r * 0.3f;
+                Path dw = new Path();
+                dw.moveTo(-r * 0.3f, -r * 0.6f);
+                dw.lineTo(-r * 2.1f, -r * 1.5f - flap);
+                dw.lineTo(-r * 1.5f, r * 0.1f);
+                dw.close();
+                g.fill(Gfx.withAlpha(dark, 200));
+                c.drawPath(dw, g.p);
+                Path dw2 = new Path();
+                dw2.moveTo(r * 0.3f, -r * 0.6f);
+                dw2.lineTo(r * 2.1f, -r * 1.5f + flap);
+                dw2.lineTo(r * 1.5f, r * 0.1f);
+                dw2.close();
+                c.drawPath(dw2, g.p);
+                g.roundRect(c, -r * 0.8f, -r * 0.8f, r * 1.6f, r * 1.7f, 12, body);
+                g.circle(c, 0, -r * 1.05f, r * 0.5f, body);
+                g.circle(c, -r * 0.16f, -r * 1.08f, 5f, 0xFFFFE08A);
+                g.circle(c, r * 0.16f, -r * 1.08f, 5f, 0xFFFFE08A);
+                Path h1 = new Path();
+                h1.moveTo(-r * 0.35f, -r * 1.35f);
+                h1.lineTo(-r * 0.7f, -r * 1.95f);
+                h1.lineTo(-r * 0.1f, -r * 1.45f);
+                h1.close();
+                g.fill(0xFFFFD9A0);
+                c.drawPath(h1, g.p);
+                Path h2 = new Path();
+                h2.moveTo(r * 0.35f, -r * 1.35f);
+                h2.lineTo(r * 0.7f, -r * 1.95f);
+                h2.lineTo(r * 0.1f, -r * 1.45f);
+                h2.close();
+                c.drawPath(h2, g.p);
+                g.circle(c, 0, r * 0.1f, r * 0.34f, Gfx.withAlpha(0xFFFFCC66, 80));
+                g.circle(c, 0, r * 0.1f, r * 0.18f, 0xFFFFF0B0);
                 break;
             }
             default: {

@@ -22,13 +22,13 @@ public final class Achievements {
             def("Langkah Pertama", "Selesaikan stage pertamamu.", CLEARED, 1),
             def("Penjelajah", "Selesaikan 5 stage.", CLEARED, 5),
             def("Penakluk", "Selesaikan 15 stage.", CLEARED, 15),
-            def("Legenda", "Selesaikan seluruh 25 stage.", CLEARED, 25),
+            def("Legenda", "Selesaikan seluruh " + Catalog.STAGE_COUNT + " stage.", CLEARED, Catalog.STAGE_COUNT),
             def("Kolektor", "Miliki 5 jenis item.", ITEMS, 5),
             def("Kaya Raya", "Kumpulkan 1.000 gold.", GOLD, 1000),
             def("Veteran", "Capai level 10.", LEVEL, 10),
             def("Ahli Skill", "Maksimalkan satu skill.", SKILL, 1),
             def("Bintang Talenta", "Total 20 level talenta.", TRACKS, 20),
-            def("Penyelamat Dunia", "Tuntaskan semua dunia.", WORLDS, 5),
+            def("Penyelamat Dunia", "Tuntaskan semua dunia.", WORLDS, Catalog.WORLD_COUNT),
             def("Teman Sejati", "Punya 3 teman online.", FRIENDS, 3)
     };
 

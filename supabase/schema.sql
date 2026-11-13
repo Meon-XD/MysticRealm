@@ -933,3 +933,403 @@ grant execute on function public.list_friend_requests() to authenticated;
 grant execute on function public.send_game_invite(uuid, uuid) to authenticated;
 grant execute on function public.list_game_invites() to authenticated;
 grant execute on function public.respond_game_invite(uuid, boolean) to authenticated;
+
+-- ------------------------------------------------------- owner admin v1.2
+
+alter table public.players add column if not exists vip boolean not null default false;
+alter table public.players add column if not exists banned boolean not null default false;
+alter table public.players add column if not exists ban_reason text not null default '';
+alter table public.players add column if not exists pending_gold bigint not null default 0;
+alter table public.players add column if not exists pending_shards integer not null default 0;
+
+create or replace function public.is_mystic_owner()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+    select exists (
+        select 1 from public.players
+         where id = auth.uid()
+           and lower(username) = 'meon_xd'
+    );
+$$;
+
+create or replace function public.assert_not_banned()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    v_banned boolean;
+begin
+    if auth.uid() is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select banned into v_banned from public.players where id = auth.uid();
+    if coalesce(v_banned, false) then
+        raise exception 'ACCOUNT_BANNED';
+    end if;
+end;
+$$;
+
+create or replace function public.sync_player_profile(
+    p_level integer,
+    p_max_stage integer,
+    p_gold bigint
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_row public.players%rowtype;
+    v_verified boolean;
+    v_pending_gold bigint;
+    v_pending_shards integer;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    select * into v_row
+      from public.players
+     where id = uid
+     for update;
+    if not found then
+        raise exception 'TARGET_NOT_FOUND';
+    end if;
+    v_verified := lower(coalesce(v_row.username, '')) = 'meon_xd';
+    v_pending_gold := greatest(coalesce(v_row.pending_gold, 0), 0);
+    v_pending_shards := greatest(coalesce(v_row.pending_shards, 0), 0);
+
+    update public.players
+       set level = greatest(coalesce(p_level, 1), 1),
+           max_stage = least(greatest(coalesce(p_max_stage, 0), 0), 24),
+           gold = greatest(coalesce(p_gold, 0), 0),
+           verified = v_verified,
+           last_seen = now(),
+           pending_gold = 0,
+           pending_shards = 0
+     where id = uid;
+
+    return jsonb_build_object(
+        'ok', true,
+        'verified', v_verified,
+        'vip', v_row.vip,
+        'banned', v_row.banned,
+        'ban_reason', coalesce(v_row.ban_reason, ''),
+        'pending_gold', v_pending_gold,
+        'pending_shards', v_pending_shards
+    );
+end;
+$$;
+
+create or replace function public.owner_search_players(p_query text default '')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    q text;
+    v_result jsonb;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    if not public.is_mystic_owner() then
+        raise exception 'OWNER_ONLY';
+    end if;
+    q := trim(coalesce(p_query, ''));
+    select coalesce(jsonb_agg(row_to_json(x) order by x.username), '[]'::jsonb)
+      into v_result
+      from (
+        select
+            p.id,
+            p.username,
+            p.level,
+            p.gold,
+            p.verified,
+            p.vip,
+            p.banned,
+            (p.id = uid) as is_me
+          from public.players p
+         where q = '' or p.username ilike '%' || q || '%'
+         order by p.username
+         limit 50
+      ) x;
+    return v_result;
+end;
+$$;
+
+create or replace function public.owner_set_vip(p_user_id uuid, p_enabled boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_target public.players%rowtype;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    if not public.is_mystic_owner() then
+        raise exception 'OWNER_ONLY';
+    end if;
+    select * into v_target from public.players where id = p_user_id for update;
+    if not found then
+        raise exception 'TARGET_NOT_FOUND';
+    end if;
+    if v_target.id = uid or lower(v_target.username) = 'meon_xd' then
+        raise exception 'CANNOT_MODIFY_OWNER';
+    end if;
+    update public.players set vip = coalesce(p_enabled, false) where id = v_target.id;
+    return jsonb_build_object('ok', true, 'vip', coalesce(p_enabled, false));
+end;
+$$;
+
+create or replace function public.owner_set_ban(
+    p_user_id uuid,
+    p_banned boolean,
+    p_reason text default ''
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_target public.players%rowtype;
+    v_reason text;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    if not public.is_mystic_owner() then
+        raise exception 'OWNER_ONLY';
+    end if;
+    select * into v_target from public.players where id = p_user_id for update;
+    if not found then
+        raise exception 'TARGET_NOT_FOUND';
+    end if;
+    if v_target.id = uid or lower(v_target.username) = 'meon_xd' then
+        raise exception 'CANNOT_MODIFY_OWNER';
+    end if;
+    v_reason := case
+        when coalesce(p_banned, false) then left(coalesce(nullif(trim(p_reason), ''), 'Diblokir oleh owner'), 200)
+        else ''
+    end;
+    update public.players
+       set banned = coalesce(p_banned, false),
+           ban_reason = v_reason
+     where id = v_target.id;
+    if coalesce(p_banned, false) then
+        update public.game_rooms
+           set status = 'finished'
+         where host_id = v_target.id and status in ('waiting', 'playing');
+        delete from public.room_members where player_id = v_target.id;
+    end if;
+    return jsonb_build_object('ok', true, 'banned', coalesce(p_banned, false), 'ban_reason', v_reason);
+end;
+$$;
+
+create or replace function public.owner_grant(
+    p_user_id uuid,
+    p_gold bigint default 0,
+    p_shards integer default 0
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_target public.players%rowtype;
+    v_gold bigint;
+    v_shards integer;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    if not public.is_mystic_owner() then
+        raise exception 'OWNER_ONLY';
+    end if;
+    select * into v_target from public.players where id = p_user_id for update;
+    if not found then
+        raise exception 'TARGET_NOT_FOUND';
+    end if;
+    v_gold := least(greatest(coalesce(p_gold, 0), 0), 1000000000);
+    v_shards := least(greatest(coalesce(p_shards, 0), 0), 1000000);
+    update public.players
+       set pending_gold = least(coalesce(pending_gold, 0) + v_gold, 999999999999),
+           pending_shards = least(coalesce(pending_shards, 0) + v_shards, 1000000)
+     where id = v_target.id;
+    return jsonb_build_object('ok', true, 'gold', v_gold, 'shards', v_shards);
+end;
+$$;
+
+create or replace function public.create_room(p_settings jsonb default '{}'::jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_room public.game_rooms%rowtype;
+    v_max integer;
+    v_settings jsonb;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    perform public.assert_not_banned();
+    v_max := least(greatest(coalesce((p_settings ->> 'max_players')::integer, 4), 2), 4);
+    v_settings := jsonb_build_object(
+        'max_players', v_max,
+        'game_mode', coalesce(p_settings ->> 'game_mode', 'classic')
+    );
+    update public.game_rooms
+       set status = 'finished'
+     where host_id = uid and status = 'waiting';
+    insert into public.game_rooms (room_code, host_id, settings)
+    values (public.generate_room_code(), uid, v_settings)
+    returning * into v_room;
+    insert into public.room_members (room_id, player_id, role)
+    values (v_room.id, uid, 'host')
+    on conflict (room_id, player_id) do update set role = 'host';
+    return jsonb_build_object(
+        'id', v_room.id,
+        'room_code', v_room.room_code,
+        'status', v_room.status,
+        'settings', v_room.settings,
+        'host_id', v_room.host_id,
+        'role', 'host'
+    );
+end;
+$$;
+
+create or replace function public.join_room(p_code text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_code text;
+    v_room public.game_rooms%rowtype;
+    v_count integer;
+    v_max integer;
+    v_role text := 'member';
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    perform public.assert_not_banned();
+    v_code := upper(regexp_replace(coalesce(p_code, ''), '[^A-Za-z0-9]', '', 'g'));
+    if length(v_code) <> 6 then
+        raise exception 'ROOM_CODE_INVALID';
+    end if;
+    select * into v_room
+      from public.game_rooms
+     where room_code = v_code
+     for update;
+    if not found then
+        raise exception 'ROOM_NOT_FOUND';
+    end if;
+    if v_room.status <> 'waiting' then
+        raise exception 'ROOM_NOT_WAITING';
+    end if;
+    if exists (
+        select 1 from public.room_members
+         where room_id = v_room.id and player_id = uid
+    ) then
+        v_role := case when v_room.host_id = uid then 'host' else 'member' end;
+        return jsonb_build_object(
+            'id', v_room.id,
+            'room_code', v_room.room_code,
+            'status', v_room.status,
+            'settings', v_room.settings,
+            'host_id', v_room.host_id,
+            'role', v_role
+        );
+    end if;
+    select count(*) into v_count
+      from public.room_members
+     where room_id = v_room.id;
+    v_max := least(greatest(coalesce((v_room.settings ->> 'max_players')::integer, 4), 2), 4);
+    if v_count >= v_max then
+        raise exception 'ROOM_FULL';
+    end if;
+    insert into public.room_members (room_id, player_id, role)
+    values (v_room.id, uid, 'member')
+    on conflict (room_id, player_id) do nothing;
+    return jsonb_build_object(
+        'id', v_room.id,
+        'room_code', v_room.room_code,
+        'status', v_room.status,
+        'settings', v_room.settings,
+        'host_id', v_room.host_id,
+        'role', 'member'
+    );
+end;
+$$;
+
+create or replace function public.start_room(p_room_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+    uid uuid := auth.uid();
+    v_room public.game_rooms%rowtype;
+begin
+    if uid is null then
+        raise exception 'AUTH_REQUIRED';
+    end if;
+    perform public.assert_not_banned();
+    select * into v_room
+      from public.game_rooms
+     where id = p_room_id and host_id = uid
+     for update;
+    if not found then
+        raise exception 'NOT_HOST';
+    end if;
+    if v_room.status <> 'waiting' then
+        raise exception 'ROOM_NOT_WAITING';
+    end if;
+    update public.game_rooms set status = 'playing' where id = p_room_id;
+    return jsonb_build_object('id', p_room_id, 'status', 'playing');
+end;
+$$;
+
+revoke all on function public.is_mystic_owner() from public;
+revoke all on function public.assert_not_banned() from public;
+revoke all on function public.sync_player_profile(integer, integer, bigint) from public;
+revoke all on function public.owner_search_players(text) from public;
+revoke all on function public.owner_set_vip(uuid, boolean) from public;
+revoke all on function public.owner_set_ban(uuid, boolean, text) from public;
+revoke all on function public.owner_grant(uuid, bigint, integer) from public;
+revoke all on function public.create_room(jsonb) from public;
+revoke all on function public.join_room(text) from public;
+revoke all on function public.start_room(uuid) from public;
+
+grant execute on function public.sync_player_profile(integer, integer, bigint) to authenticated;
+grant execute on function public.owner_search_players(text) to authenticated;
+grant execute on function public.owner_set_vip(uuid, boolean) to authenticated;
+grant execute on function public.owner_set_ban(uuid, boolean, text) to authenticated;
+grant execute on function public.owner_grant(uuid, bigint, integer) to authenticated;
+grant execute on function public.create_room(jsonb) to authenticated;
+grant execute on function public.join_room(text) to authenticated;
+grant execute on function public.start_room(uuid) to authenticated;

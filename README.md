@@ -61,6 +61,11 @@ inventaris, toko, upgrade equipment, skill, talenta, 5 tingkat kesulitan,
 pengaturan volume musik/SFX, ukuran tombol, sensitivitas analog, kualitas grafis,
 musik/SFX sintetis, minimap, penyimpanan lokal, serta sinematik pembuka dan penutup.
 
+Visual gameplay memakai renderer Canvas 2D bergaya 2.5D, bukan model 3D.
+Arena kini memakai variasi tekstur dan detail per biome, siluet pohon/batu
+lebih berstruktur, gerakan karakter bermuatan langkah, musuh dengan animasi
+melayang yang berbeda, dan tombol aksi dengan highlight serta status siap skill.
+
 ## Sinematik
 
 - Video pembuka diputar saat memulai petualangan baru; tersedia tombol `Lewati`.

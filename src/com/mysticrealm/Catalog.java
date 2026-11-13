@@ -21,9 +21,21 @@ public final class Catalog {
     public static final int SKILL_ASS_STEP = 7;
     public static final int SKILL_ASS_VENOM = 8;
     public static final int SKILL_ASS_EXECUTE = 9;
+    public static final int SKILL_ARC_VOLLEY = 10;
+    public static final int SKILL_ARC_TRAP = 11;
+    public static final int SKILL_ARC_RAIN = 12;
+    public static final int SKILL_PRI_HEAL = 13;
+    public static final int SKILL_PRI_SMITE = 14;
+    public static final int SKILL_PRI_SANCTUARY = 15;
+    public static final int SKILL_KNI_BASH = 16;
+    public static final int SKILL_KNI_GUARD = 17;
+    public static final int SKILL_KNI_JUDGMENT = 18;
 
     public static final int MAX_SKILL_LEVEL = 5;
     public static final int MAX_TRACK_LEVEL = 25;
+    public static final int STAGES_PER_WORLD = 5;
+    public static final int WORLD_COUNT = 10;
+    public static final int STAGE_COUNT = STAGES_PER_WORLD * WORLD_COUNT;
 
     public static class Item {
         public String id, name, desc;
@@ -97,10 +109,10 @@ public final class Catalog {
 
     public static final LinkedHashMap<String, Item> ITEMS = new LinkedHashMap<>();
 
-    public static final ClassDef[] CLASSES = new ClassDef[3];
-    public static final Skill[][] SKILLS = new Skill[3][3];
+    public static final ClassDef[] CLASSES = new ClassDef[6];
+    public static final Skill[][] SKILLS = new Skill[6][3];
     public static final Track[] TRACKS = new Track[6];
-    public static final WorldDef[] WORLDS = new WorldDef[5];
+    public static final WorldDef[] WORLDS = new WorldDef[WORLD_COUNT];
     public static final String[] DIFFICULTY = {"Mudah", "Normal", "Sulit", "Mimpi Buruk", "Jurang"};
     public static final String[] DIFFICULTY_DESC = {
             "Musuh lebih lemah, cocok untuk cerita.",
@@ -200,6 +212,18 @@ public final class Catalog {
         equip("venom_dagger", "Venom Dagger", "Belati berlapis racun laba-laba.", SLOT_WEAPON, 2, 560, 17, 0, 0, 0, 4, 6);
         equip("shadow_dagger", "Shadow Dagger", "Belati yang lahir dari kegelapan murni.", SLOT_WEAPON, 4, 2500, 38, 0, 0, 10, 6, 10);
 
+        equip("hunting_bow", "Hunting Bow", "Busur kayu untuk berburu di hutan.", SLOT_WEAPON, 0, 95, 6, 0, 0, 0, 3, 2);
+        equip("longbow", "Ranger Longbow", "Busur panjang dengan tarikan mantap.", SLOT_WEAPON, 2, 580, 18, 0, 0, 0, 5, 5);
+        equip("storm_bow", "Storm Bow", "Busur yang melepaskan anak panah badai.", SLOT_WEAPON, 4, 2600, 40, 0, 0, 12, 7, 8);
+
+        equip("holy_staff", "Holy Staff", "Tongkat kayu berhias simbol cahaya.", SLOT_WEAPON, 0, 95, 3, 0, 0, 18, 0, 1);
+        equip("radiant_staff", "Radiant Staff", "Tongkat yang memancarkan kehangatan suci.", SLOT_WEAPON, 2, 580, 14, 0, 0, 34, 0, 3);
+        equip("divine_scepter", "Divine Scepter", "Tongkat emas peninggalan para pendeta.", SLOT_WEAPON, 4, 2600, 31, 0, 0, 64, 0, 5);
+
+        equip("knight_blade", "Knight Blade", "Pedang baja milik ksatria kerajaan.", SLOT_WEAPON, 0, 100, 8, 2, 0, 0, 0, 0);
+        equip("guardian_sword", "Guardian Sword", "Pedang besar penjaga gerbang kota.", SLOT_WEAPON, 2, 600, 21, 4, 8, 0, 0, 1);
+        equip("aegis_blade", "Aegis Blade", "Bilah perisai yang tak pernah retak.", SLOT_WEAPON, 4, 2700, 45, 8, 18, 0, 0, 3);
+
         equip("apprentice_staff", "Apprentice Staff", "Tongkat magang penyihir.", SLOT_WEAPON, 0, 90, 3, 0, 0, 15, 0, 0);
         equip("runed_staff", "Runed Staff", "Tongkat berukir rune kuno.", SLOT_WEAPON, 2, 560, 13, 0, 0, 30, 0, 2);
         equip("arcane_staff", "Arcane Staff", "Tongkat kristal berisi mana murni.", SLOT_WEAPON, 4, 2500, 30, 0, 0, 60, 0, 4);
@@ -279,9 +303,54 @@ public final class Catalog {
         a.color = 0xFF43D17A;
         a.startWeapon = "dagger";
 
+        ClassDef ar = new ClassDef();
+        ar.id = "archer";
+        ar.name = "Archer";
+        ar.role = "Pemanah jarak jauh";
+        ar.desc = "Mata elang dan bidikan presisi. Menjatuhkan musuh sebelum mereka mendekat.";
+        ar.hp = 165;
+        ar.mp = 95;
+        ar.atk = 17;
+        ar.def = 8;
+        ar.spd = 112;
+        ar.crit = 12;
+        ar.color = 0xFFE3B23C;
+        ar.startWeapon = "hunting_bow";
+
+        ClassDef pr = new ClassDef();
+        pr.id = "priest";
+        pr.name = "Priest";
+        pr.role = "Penyembuh suci";
+        pr.desc = "Cahaya yang menyembuhkan sekaligus menghukum. Bertahan berkat berkah ilahi.";
+        pr.hp = 185;
+        pr.mp = 150;
+        pr.atk = 13;
+        pr.def = 9;
+        pr.spd = 96;
+        pr.crit = 5;
+        pr.color = 0xFFFFE9A8;
+        pr.startWeapon = "holy_staff";
+
+        ClassDef kn = new ClassDef();
+        kn.id = "knight";
+        kn.name = "Knight";
+        kn.role = "Pelindung baja";
+        kn.desc = "Benteng berjalan dengan tebasan berat. Melindungi sekutu di garis depan.";
+        kn.hp = 260;
+        kn.mp = 70;
+        kn.atk = 17;
+        kn.def = 16;
+        kn.spd = 88;
+        kn.crit = 4;
+        kn.color = 0xFF9FB4C7;
+        kn.startWeapon = "knight_blade";
+
         CLASSES[0] = w;
         CLASSES[1] = m;
         CLASSES[2] = a;
+        CLASSES[3] = ar;
+        CLASSES[4] = pr;
+        CLASSES[5] = kn;
     }
 
     private static Skill sk(String name, String desc, int mp, float cd, int kind, int color, float power) {
@@ -308,6 +377,18 @@ public final class Catalog {
         SKILLS[2][0] = sk("Shadow Step", "Berkedip ke depan, menebas sepanjang jalan.", 16, 5f, SKILL_ASS_STEP, 0xFF43D17A, 1.7f);
         SKILLS[2][1] = sk("Venom Blades", "Melempar lima belati beracun.", 22, 8f, SKILL_ASS_VENOM, 0xFF7FE08A, 1.1f);
         SKILLS[2][2] = sk("Assassinate", "Berpindah ke musuh terdekat dan menebas fatal.", 40, 16f, SKILL_ASS_EXECUTE, 0xFFB07CFF, 4.4f);
+
+        SKILLS[3][0] = sk("Triple Volley", "Melepaskan tiga anak panah sekaligus.", 16, 4.5f, SKILL_ARC_VOLLEY, 0xFFE3B23C, 0.95f);
+        SKILLS[3][1] = sk("Snare Trap", "Memasang jerat yang melukai dan melumpuhkan.", 20, 9f, SKILL_ARC_TRAP, 0xFF7FD17F, 1.2f);
+        SKILLS[3][2] = sk("Arrow Rain", "Hujan anak panah di area musuh terdekat.", 30, 15f, SKILL_ARC_RAIN, 0xFFF2C94C, 1.5f);
+
+        SKILLS[4][0] = sk("Holy Light", "Memulihkan 35% HP dan memancarkan cahaya.", 24, 10f, SKILL_PRI_HEAL, 0xFFFFF0B0, 0.35f);
+        SKILLS[4][1] = sk("Radiant Smite", "Proyektil suci yang melumpuhkan musuh.", 18, 5f, SKILL_PRI_SMITE, 0xFFFFE9A8, 1.6f);
+        SKILLS[4][2] = sk("Sanctuary", "Ledakan cahaya luas sambil memulihkan diri.", 34, 16f, SKILL_PRI_SANCTUARY, 0xFFFFD166, 1.9f);
+
+        SKILLS[5][0] = sk("Shield Bash", "Menghantam dengan perisai dan melumpuhkan.", 16, 5f, SKILL_KNI_BASH, 0xFFB8C9DA, 1.6f);
+        SKILLS[5][1] = sk("Iron Guard", "Mengurangi kerusakan 40% selama 8 detik.", 22, 14f, SKILL_KNI_GUARD, 0xFF9FB4C7, 0f);
+        SKILLS[5][2] = sk("Judgment", "Ledakan tebasan berat di sekitar musuh.", 38, 18f, SKILL_KNI_JUDGMENT, 0xFFFFF1C1, 2.6f);
     }
 
     private static Track tr(String name, String desc, int color) {
@@ -439,11 +520,96 @@ public final class Catalog {
         };
         w5.boss = boss("Ancient God", "Dewa Purba", 0xFFFFE08A, 7500, 95, 24, 80, 3.2f);
 
+        WorldDef w6 = new WorldDef();
+        w6.name = "Sunken Coast";
+        w6.subtitle = "Pantai Tenggelam";
+        w6.tag = "Ombak memanggil bangkai kapal. Rahasia laut menunggu di balik pasang.";
+        w6.groundA = 0xFF2A3B36;
+        w6.groundB = 0xFF31463E;
+        w6.path = 0xFF46584A;
+        w6.accent = 0xFF6FE3D0;
+        w6.deco = 0xFF1B2B29;
+        w6.mobs = new MonsterDef[]{
+                mob("Riptide Crab", 27, 0xFF59C7C0, 260, 52, 10, 70, 130, 80, false, 1.05f, 30),
+                mob("Siren", 25, 0xFF7FD8E8, 220, 58, 8, 90, 140, 90, true, 1f, 26),
+                mob("Drowned Raider", 29, 0xFF8BA89B, 300, 60, 14, 95, 150, 100, false, 1.05f, 29)
+        };
+        w6.boss = boss("Tide Leviathan", "Leviathan Pasang", 0xFF4FD1C5, 9800, 102, 26, 82, 3.1f);
+
+        WorldDef w7 = new WorldDef();
+        w7.name = "Crystal Caverns";
+        w7.subtitle = "Gua Kristal";
+        w7.tag = "Kristal bernyanyi dalam gelap. Setiap kilau menyimpan racun.";
+        w7.groundA = 0xFF241C3A;
+        w7.groundB = 0xFF2A2147;
+        w7.path = 0xFF3B2F63;
+        w7.accent = 0xFF9B7BFF;
+        w7.deco = 0xFF171128;
+        w7.mobs = new MonsterDef[]{
+                mob("Crystal Crawler", 27, 0xFFB49BFF, 340, 66, 14, 72, 180, 115, false, 1.1f, 30),
+                mob("Spore Shroom", 22, 0xFFE07AA0, 280, 70, 10, 60, 175, 110, true, 1f, 27),
+                mob("Bone Sentry", 23, 0xFFD8D2C0, 400, 72, 20, 78, 195, 125, false, 1.1f, 30)
+        };
+        w7.boss = boss("Crystal Wyrm", "Naga Kristal", 0xFF9B7BFF, 12500, 112, 30, 86, 3.5f);
+
+        WorldDef w8 = new WorldDef();
+        w8.name = "Sky Citadel";
+        w8.subtitle = "Pulau Langit";
+        w8.tag = "Istana melayang di atas awan. Badai menjaga singgasananya.";
+        w8.groundA = 0xFF2B3350;
+        w8.groundB = 0xFF354063;
+        w8.path = 0xFF4A578A;
+        w8.accent = 0xFFB8D8FF;
+        w8.deco = 0xFF1C2338;
+        w8.mobs = new MonsterDef[]{
+                mob("Storm Harpy", 25, 0xFFB8D8FF, 430, 80, 14, 120, 230, 145, false, 1.05f, 28),
+                mob("Sentinel Wraith", 28, 0xFFA8B8FF, 380, 88, 12, 88, 240, 150, true, 1.05f, 27),
+                mob("Fallen Knight", 23, 0xFFD8E2F0, 520, 86, 24, 80, 260, 165, false, 1.15f, 31)
+        };
+        w8.boss = boss("Storm Archon", "Penguasa Badai", 0xFFB8D8FF, 16000, 124, 34, 92, 3.6f);
+
+        WorldDef w9 = new WorldDef();
+        w9.name = "Blighted Swamp";
+        w9.subtitle = "Rawa Terkutuk";
+        w9.tag = "Air hitam menelan cahaya. Sesuatu yang lapar bergerak di bawah lumut.";
+        w9.groundA = 0xFF23301F;
+        w9.groundB = 0xFF2A3A25;
+        w9.path = 0xFF35492D;
+        w9.accent = 0xFF9BD44A;
+        w9.deco = 0xFF141D12;
+        w9.mobs = new MonsterDef[]{
+                mob("Rot Zombie", 24, 0xFF8FA86A, 560, 94, 18, 62, 300, 180, false, 1.1f, 30),
+                mob("Venom Spider", 21, 0xFF9BD44A, 480, 98, 14, 110, 310, 190, false, 1.05f, 29),
+                mob("Bog Wisp", 22, 0xFFA0E060, 420, 104, 12, 84, 320, 200, true, 1f, 27)
+        };
+        w9.boss = boss("Bog Matriarch", "Ratu Rawa", 0xFF9BD44A, 20000, 136, 38, 96, 3.7f);
+
+        WorldDef w10 = new WorldDef();
+        w10.name = "Dragon's Maw";
+        w10.subtitle = "Sarang Naga";
+        w10.tag = "Gunung berapi terakhir. Di puncaknya, naga purba membuka mata.";
+        w10.groundA = 0xFF3A2018;
+        w10.groundB = 0xFF45261D;
+        w10.path = 0xFF5B3125;
+        w10.accent = 0xFFFF8A3D;
+        w10.deco = 0xFF25120D;
+        w10.mobs = new MonsterDef[]{
+                mob("Ash Scorpion", 20, 0xFFE08A4A, 700, 112, 24, 100, 380, 230, false, 1.15f, 32),
+                mob("Ember Wraith", 28, 0xFFFF8A3D, 620, 120, 18, 96, 400, 240, true, 1.05f, 28),
+                mob("Dragon Cultist", 29, 0xFFC75A3A, 780, 116, 26, 92, 420, 260, false, 1.1f, 30)
+        };
+        w10.boss = boss("Elder Dragon", "Naga Purba", 0xFFFF8A3D, 26000, 155, 44, 90, 4f);
+
         WORLDS[0] = w1;
         WORLDS[1] = w2;
         WORLDS[2] = w3;
         WORLDS[3] = w4;
         WORLDS[4] = w5;
+        WORLDS[5] = w6;
+        WORLDS[6] = w7;
+        WORLDS[7] = w8;
+        WORLDS[8] = w9;
+        WORLDS[9] = w10;
     }
 
     public static Item item(String id) {
@@ -511,10 +677,10 @@ public final class Catalog {
     }
 
     public static String stageName(int stageIndex) {
-        int wi = stageIndex / 5;
-        int si = stageIndex % 5;
+        int wi = stageIndex / STAGES_PER_WORLD;
+        int si = stageIndex % STAGES_PER_WORLD;
         if (wi < 0) wi = 0;
-        if (wi > 4) wi = 4;
+        if (wi > WORLD_COUNT - 1) wi = WORLD_COUNT - 1;
         return WORLDS[wi].subtitle + " " + (si + 1);
     }
 
